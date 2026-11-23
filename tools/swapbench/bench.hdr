@@ -1,0 +1,5 @@
+name = AUTOSTART
+class = CwBench
+mode = 640x480
+api = 6
+icon = ../../cfg/icon.pbm

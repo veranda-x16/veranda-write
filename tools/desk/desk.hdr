@@ -1,0 +1,5 @@
+name = SHELL
+class = CwDesk
+mode = 640x480
+api = 6
+icon = ../../cfg/icon.pbm

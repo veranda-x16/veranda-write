@@ -1,0 +1,12 @@
+# Veranda Write: the application header (Veranda's tools/vpack.py)
+name        = Veranda Write
+class       = CmdrWrite
+version     = 0.1
+author      = Marcin Spoczynski
+description = A word processor: fonts, sizes, bold, italic, underline, undo; documents larger than main RAM.
+mode        = 640x480
+api         = 6
+overlays    = banked
+documents   = CWR
+icon        = icon.pbm
+tile        = tile.txt
