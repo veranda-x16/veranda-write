@@ -11,7 +11,7 @@ extern unsigned char dirty;             /* the edits since lay_fix */
 extern pos_t d_lo, d_hi;
 extern long d_delta;
 extern unsigned char dm_on;
-extern pos_t dm_lo, dm_hi;
+extern pos_t dm_lo, dm_hi, de_lo, de_hi;
 extern long dm_delta;
 unsigned int FASTCALL lt_len_of(unsigned int i);
 extern unsigned char lw_n;              /* the window of the table: 0 empties it */

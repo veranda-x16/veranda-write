@@ -1,10 +1,11 @@
-/* Veranda Write's gate: the test build's part (-DCW_TEST; overlay 7,
-   its variables in main RAM; overlay 14). test_start reads the session (CW.PLY,
+/* Veranda Write's gate: the test build's part (-DCW_TEST; overlay 17,
+   its variables and small entry points in main RAM: the test build's
+   main RAM is the program's but for them, W48). test_start reads the session (CW.PLY,
    tools/script.py writes it) into a RAM bank and starts the player
    (tools/play.s); the player's 'L' n makes the program log its state when
    it is next idle:
 
-     CW STATE n len lines cur anc modified style top sum chars banks psum name
+     CW STATE n len lines cur anc modified style top sum chars banks psum pages name
 
    (hex; sum: the characters and their styles, as tools/cwrd.py sums a
    document: each character c in style (font f, size z, flags g) adds
@@ -18,13 +19,19 @@
 #include <string.h>
 #include "cwv.h"
 
-extern unsigned char play_bank;
+extern unsigned char play_bank, play_st, play_t0[4];
 void play_go(void);
 void Player(void);
 
 unsigned char test_log;
-static char line[160];
-static unsigned char clk[4], armed, playing;
+static char line[160];                  /* (main RAM: LogText reads it) */
+static unsigned char t_k;               /* (test_key's) */
+static char mk_w[16];                   /* (test_mark's: the caller's name, copied) */
+
+#pragma code-name ("OVERLAY17")
+#pragma rodata-name ("OVL17RO")
+static unsigned char clk[4], armed, playing, lat_k, lats;
+static unsigned long lat_t0;
 static const char hex[] = "0123456789ABCDEF";
 
 static char *hexn(char *p, unsigned long v)
@@ -47,11 +54,12 @@ static void clock_read(unsigned char *c)
 /* "CW MARK what cycles": the time since the last mark (profiling) */
 static unsigned char mk[4];
 
-void __fastcall__ test_mark(const char *what)
+static void e_test_mark(void)
 {
     unsigned long a, b;
     unsigned char c[4];
     char *p = line;
+    const char *what = mk_w;
     clock_read(c);
     memcpy(&a, mk, 4);
     memcpy(&b, c, 4);
@@ -66,7 +74,7 @@ void __fastcall__ test_mark(const char *what)
     LogText(line);
 }
 
-void test_aside(void)
+static void e_test_aside(void)
 {
     char *p = line;
     mouseSource = 0;                    /* (the player is in this program's memory) */
@@ -78,29 +86,28 @@ void test_aside(void)
     LogText(line);
 }
 
-/* (main RAM: it maps the script's bank for FRead). The session goes
-   into overlay 14's own bank after its code ($A800 on: a bank fewer, so
-   that the switcher still puts the test build aside at 512 KB) */
-void test_start(void)
+/* The session goes into this overlay's own bank after its code ($AC00
+   on: a bank fewer) */
+static char ply[] = "CW.PLY";           /* (main RAM: the kernel reads it) */
+
+static void e_test_start(void)
 {
     unsigned char h;
-    h = FOpen("CW.PLY", 'r');
+    h = FOpen(ply, 'r');
     if (h < 2) {
-        LogText("CW NO SCRIPT");
+        strcpy(line, "CW NO SCRIPT");   /* (the kernel reads it: main RAM) */
+        LogText(line);
         return;
     }
-    MAPBANK(bank14);
-    FRead(h, (void *)0xA800, 6144);
-    MAPBANK(bank1);
+    FRead(h, (void *)0xAC00, 5120);
     FClose(h);
-    play_bank = bank14;
+    play_bank = bank17;
     play_go();
     playing = 1;
     asideVector = VR_FN(cw_aside);
 }
 
-/* the state's log: overlay 8 */
-#pragma code-name (push, "OVERLAY14")
+/* the state's log */
 static unsigned int sw_r0, sw_w0;
 static unsigned long nch, psum;
 
@@ -182,7 +189,12 @@ static void log_state(void)
     p = hexn(p, nch);
     p = hexn(p, (unsigned long)bk_owned << 8 | bk_free_n());
     p = hexn(p, psum);
-
+    pg_tot = 0;                         /* (W45: the pages, all of them counted) */
+    if (!ld_kind) {
+        pg_arg = 1;
+        pg_first();
+    }
+    p = hexn(p, pg_tot);
     strncpy(p, docname, 30);
     p[30] = 0;
     LogText(line);
@@ -190,33 +202,72 @@ static void log_state(void)
     sw_w0 = sw_writes;
 }
 
-#pragma code-name (pop)
-
-void test_tick(void)
+static void e_test_tick(void)
 {
     if (playing && !mouseSource) {
         play_go();                      /* (back from being put aside) */
         asideVector = VR_FN(cw_aside);
-        LogText("CW BACK");
+        strcpy(line, "CW BACK");        /* (the kernel reads it: main RAM) */
+        LogText(line);
     }
     if (test_log)
-        callb(bank14, log_state);
+        log_state();
 }
 
-void __fastcall__ test_key(unsigned char k)
+static void e_test_key(void)
 {
+    unsigned char k = t_k;
+    ++lat_k;
     if (!armed && (k == 'x' || k == 'q' || k == KEY_PGDN || k == CR)) {
         armed = k;
         clock_read(clk);
     }
 }
 
-void test_drawn(void)
+/* the status bar drawn after a timed key: "CW LATS cycles" since it was put */
+static void e_test_status(void)
+{
+    unsigned long b;
+    unsigned char c[4];
+    if (!lats)
+        return;
+    lats = 0;
+    clock_read(c);
+    memcpy(&b, c, 4);
+    memcpy(line, "CW LATS ", 8);
+    hexn(line + 8, b - lat_t0)[0] = 0;
+    LogText(line);
+}
+
+static void e_test_drawn(void)
 {
     static char w[6] = "KEYxx";
     unsigned long a, b;
     unsigned char c[4];
     char *p = line;
+    if (play_st) {
+        /* a timed key ('Q', 'R') drawn: "CW LAT keys cycles", the keys
+           taken since the last drawing, the time since the first was put */
+        clock_read(c);
+        asm("sei");
+        memcpy(&a, play_t0, 4);
+        play_st = 0;
+        asm("cli");
+        lat_t0 = a;
+        lats = 1;
+        memcpy(&b, c, 4);
+        memcpy(p, "CW LAT ", 7);
+        p = hexn(p + 7, lat_k);
+        p = hexn(p, b - a);
+        *p = 0;
+        LogText(line);
+        p = line;
+    } else if (lat_k) {
+        memcpy(p, "CW DRAW ", 8);       /* (keys drawn, none of them timed) */
+        hexn(p + 8, lat_k)[0] = 0;
+        LogText(line);
+    }
+    lat_k = 0;
     if (!armed)
         return;
     clock_read(c);
@@ -234,3 +285,30 @@ void test_drawn(void)
     *p = 0;
     LogText(line);
 }
+
+/*---------------------------------------------------------------
+  the entry points (main RAM): into this overlay
+ ---------------------------------------------------------------*/
+#pragma code-name ("CODE")
+
+/* (the name is the caller's, perhaps in its overlay: copied first) */
+void __fastcall__ test_mark(const char *what)
+{
+    unsigned char i;
+    for (i = 0; i < sizeof mk_w - 1 && what[i]; ++i)
+        mk_w[i] = what[i];
+    mk_w[i] = 0;
+    callb(bank17, e_test_mark);
+}
+
+void __fastcall__ test_key(unsigned char k)
+{
+    t_k = k;
+    callb(bank17, e_test_key);
+}
+
+void test_aside(void) { callb(bank17, e_test_aside); }
+void test_start(void) { callb(bank17, e_test_start); }
+void test_tick(void) { callb(bank17, e_test_tick); }
+void test_status(void) { callb(bank17, e_test_status); }
+void test_drawn(void) { callb(bank17, e_test_drawn); }

@@ -19,13 +19,14 @@
 static const char *const names[][2] = {
     { "About Veranda Write", "" }, { "\x1fWord count...", "" },
     { "New", "Ctrl N" }, { "Open...", "Ctrl O" }, { "\x1fSave", "Ctrl S" }, { "Save as...", "Ctrl Shift S" },
+    { "\x1fPage setup...", "" }, { "Export as PDF...", "Ctrl Shift P" },
     { "\x1f" "Close", "Ctrl W" }, { "Quit", "Ctrl Q" },
     { "Undo", "Ctrl Z" }, { "Redo", "Ctrl Y" }, { "\x1f" "Cut", "Ctrl X" }, { "Copy", "Ctrl C" },
     { "Paste", "Ctrl V" }, { "Select all", "Ctrl A" }, { "\x1f" "Find...", "Ctrl F" }, { "Find next", "Ctrl G" },
     { "Replace...", "Ctrl H" }, { "Go to page...", "Ctrl Shift G" },
+    { "Page break", "Ctrl Return" }, { "Date and time", "Ctrl Shift D" }, { "\x1fHeader and footer...", "" },
     { "Plain", "Ctrl T" }, { "Bold", "Ctrl B" }, { "Italic", "Ctrl I" }, { "Underline", "Ctrl U" },
-    { "\x1fLarger", "Ctrl E" }, { "Smaller", "Ctrl Shift E" }, { "\x1fInsert date and time", "Ctrl Shift D" },
-    { "Page break", "Ctrl Return" },
+    { "\x1fLarger", "Ctrl E" }, { "Smaller", "Ctrl Shift E" },
     { "Body", "" }, { "\x1fHeading 1", "" }, { "Heading 2", "" }, { "Heading 3", "" }, { "\x1fQuote", "" },
     { "\x1f" "Bulleted list", "" }, { "Numbered list", "" },
     { "Align left", "Ctrl L" }, { "Centre", "Ctrl Shift C" }, { "Align right", "Ctrl Shift R" },
@@ -60,11 +61,11 @@ void menu_make(void)
     unsigned int mx = 0;
     char *p;
     UseFont(FONT_UI);                   /* (the menus' font: theme_menus, Veranda's V79) */
-    if (b == 6) {
+    if (b == 7) {
         n = fm_n;
         for (i = 0; i < n; ++i)
             strcpy(itext[i], fm_names[i]);
-    } else if (b == 7) {
+    } else if (b == 8) {
         menu_choice = ty_style;
         sizes_fill();
         n = sz_n;

@@ -94,6 +94,7 @@ void doc_new(void)
     sty_reset();
     par_reset();
     ul_reset();
+    pgs_default();                      /* (the user's page setup: wrap_w) */
     lay_all();
     doc_modified = 0;
 }
@@ -154,10 +155,19 @@ pos_t doc_insert(pos_t p, const unsigned char *s, unsigned int n, unsigned char 
             break;
         }
     sp = style_at(p);
+    PM("sty");
     if (t == sp) {
-        if (!tx_ins(p, s, n))
+        if (!tx_ins(p, s, n)) {
             p += n + par_codes(p, p + n, np);
+            if (n == 1 && !IS_KIND(*s) && *s != CH_CR) {
+                sa_pos = p;             /* (W43: a character typed: the style after it is the */
+                sa_s = sp;              /* same, the next key's style_at needs no walk) */
+                sa_ok = 1;
+            }
+        }
+        PM("tx");
         lay_fix();
+        PM("lay");
         return pos_norm(p);
     }
     q = codes_before(p);

@@ -42,33 +42,6 @@ static void store(struct cbuf *c)
 #endif
 }
 
-void cb_initp(struct cbuf *c, unsigned char *bank, unsigned int *len, unsigned char pg, unsigned int max)
-{
-    memset(c, 0, sizeof *c);
-    c->bank = bank;
-    c->len = len;
-    c->max = max;
-    c->pg = pg;
-    if (pg)
-        wh_clear(pg);
-}
-
-void cb_init(struct cbuf *c, unsigned char *bank, unsigned int *len, unsigned int max)
-{
-    cb_initp(c, bank, len, 0, max);
-}
-
-void cb_clear(struct cbuf *c)
-{
-    while (c->n)
-        bk_put(c->bank[--c->n]);        /* (bank 0, a chunk on the card: nothing) */
-    if (c->pg)
-        wh_clear(c->pg);
-    c->ci = 0;
-    c->cs = 0;
-    c->total = 0;
-}
-
 /* chunk i changed: its copy on the card (if any) no longer it */
 static void dirty(unsigned int i)
 {
@@ -107,11 +80,6 @@ static void drop_chunk(unsigned int i)
         wh_del(W.pg, i, W.n - i);
 }
 
-unsigned char cb_room(struct cbuf *c, pos_t n)
-{
-    return c->n + (unsigned int)(n / BANK_SIZE) + 2 <= c->max;
-}
-
 unsigned char cb_insert(struct cbuf *c, pos_t at, const unsigned char *src, unsigned int n)
 {
     static unsigned char need, k, b, got[10];
@@ -129,9 +97,15 @@ unsigned char cb_insert(struct cbuf *c, pos_t at, const unsigned char *src, unsi
         cs = 0;
     }
     locate(at);
+    if (cb_split && !off && ci && B[ci - 1] && L[ci - 1] + n <= BANK_SIZE) {
+        --ci;                           /* (W43: at a chunk's start, typed at the end of the one */
+        cs -= L[ci];                    /* before it, in RAM, when it has the room: the */
+        off = L[ci];                    /* characters after a split go there) */
+    }
     sw_pin1 = b = res();
     l = L[ci];
-    if (l + n <= BANK_SIZE) {
+    if (l + n <= BANK_SIZE
+        && !(cb_split && c == &tx && l - off > CB_SPLIT && W.n < W.max && bk_cheap())) {
         bm_move(b, off + n, off, l - off);
         bm_in(b, off, src, n);
         L[ci] = l + n;

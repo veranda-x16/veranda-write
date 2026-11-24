@@ -29,6 +29,9 @@
 ;                     the program was busy since
 ;   'R' k n f         key k n times, one every f frames whatever the
 ;                     program does (a key held: the keyboard's repeat)
+;   'A' k1 k2 f       key k1 now, then k2 f frames on whatever the program
+;                     does (a long command started and stopped: Esc while
+;                     a PDF is written, Veranda Write's W47)
 ;   'B' m n           the blink probe (W42): n changes of the cursor
 ;                     (cur_on, as play_slow is given it), each logged
 ;                     "BLINK m s frames" (s the new state, frames since the
@@ -37,6 +40,12 @@
 ;                     m * 1,300 cycles a pass (play_slow(cur_on), which the
 ;                     program calls in its idle pass after view_blink; 0:
 ;                     as fast as it runs); no record meanwhile
+;   'Q' k             key k into the ROM's queue, timed: the clock kept
+;                     (play_t0, play_st set) unless a key put before is
+;                     still waiting to be drawn; src/v/test.c logs "CW LAT
+;                     keys cycles" when the program has drawn it (keys: the
+;                     ones it took since its last drawing). 'R''s keys are
+;                     timed the same way
 ;   'S' / 'E'         the end: VRAM dumped, the emulator stops
 ;
 ; A program busy for HUNG frames on end is hung: "HUNG", the dump, the end.
@@ -46,7 +55,7 @@
 .include "veranda.inc"
 .include "x16hw.inc"
 
-.export _play_bank, _play_go, _play_slow
+.export _play_bank, _play_go, _play_slow, _play_t0, _play_st
 .import _cw_idle, _test_log, _barx
 
 GAP     = 6
@@ -57,7 +66,7 @@ KBDBUF_PEEK = $FEBD
 .segment "DATA"
 
 _play_bank: .byte 0
-cur:	.word $A800             ; (the session: in overlay 11's bank, after its code)
+cur:	.word $AC00             ; (the session: in overlay 17's bank, after its code)
 wait:	.byte 60
 px:	.word 320
 py:	.word 240
@@ -78,6 +87,8 @@ bslow:	.byte 0                 ; (play_slow's: bm while the probe runs)
 bcur:	.byte 0                 ; cur_on as play_slow was given it
 bs:	.byte 0                 ; cur_on as last seen
 bf:	.word 0                 ; frames since it began
+_play_st: .byte 0               ; 'Q': a timed key waits to be drawn (test.c clears it)
+_play_t0: .res 4                ; the clock when it was put
 
 .segment "CODE"
 
@@ -195,9 +206,28 @@ rep:	lda rn
 	lda rf
 	sta rc
 	dec rn
+	jsr stamp
 	lda rk
 	jmp k_kbdbuf_put
 @r:	rts
+
+; a timed key: the clock, unless one put before is not drawn yet
+stamp:	lda _play_st
+	bne @r
+	lda EMU_CLOCK
+	sta _play_t0
+	lda EMU_CLOCK+1
+	sta _play_t0+1
+	lda EMU_CLOCK+2
+	sta _play_t0+2
+	lda EMU_CLOCK+3
+	sta _play_t0+3
+	lda #1
+	sta _play_st
+@r:	rts
+opQ:	jsr stamp
+	lda rec+1
+	jmp k_kbdbuf_put
 
 step:	lda ended
 	bne @r
@@ -308,8 +338,12 @@ ops:	.byte 'P', 5
 	.addr opY - 1
 	.byte 'R', 4
 	.addr opR - 1
+	.byte 'A', 4
+	.addr opA - 1
 	.byte 'B', 3
 	.addr opB - 1
+	.byte 'Q', 2
+	.addr opQ - 1
 	.byte 'S', 1
 	.addr stop - 1
 	.byte 'E', 1
@@ -372,6 +406,14 @@ opR:	lda rec+1
 	lda rec+2
 	sta rn
 	rts
+opA:	lda rec+2              ; k2 in f frames ('R''s, once)
+	sta rk
+	lda rec+3
+	sta rc
+	lda #1
+	sta rn
+	lda rec+1
+	jmp k_kbdbuf_put
 opD:	lda #1
 	sta pb
 	rts

@@ -35,6 +35,7 @@ static char *put_n(char *p, unsigned long v)
    indents: the first line's at the top, the left and the right at the
    bottom). Their places: cwv.h's TB_, RL_Y. Drawn again when what they
    show changed (the typing style's or the paragraph's values). */
+static struct line tl_l;
 static struct cstyle tb_c = { 0xFF };
 static struct pstyle tb_q = { 0xFF };
 static unsigned char tb_none;           /* the Classic theme: no colours */
@@ -82,7 +83,9 @@ void t_toolbar(void)
     static const char bu[3] = { 'B', 0, 'U' };
     unsigned char k, j, n, on, pi;
     c = &sty[ty_style];
-    pi = par_at(par_start(cur));
+    lt_find(cur);                       /* (W43: the line's paragraph style, as par_at(par_start(cur)) */
+    lt_get(lf_i, &tl_l);                /* without walking back to the paragraph's start) */
+    pi = tl_l.p;
     ps = &par[pi];
     if (!memcmp(c, &tb_c, sizeof tb_c) && !memcmp(ps, &tb_q, sizeof tb_q))
         return;
@@ -158,4 +161,3 @@ void t_toolbar(void)
     }
     UseFont(0);
 }
-

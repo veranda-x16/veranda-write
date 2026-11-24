@@ -78,11 +78,11 @@ static void para_in(pos_t p)
 void wrap(pos_t p, unsigned char s)
 {
     static unsigned int i, brk, bx, w, vis, bvis;
-    static unsigned char c, am, dm, ba, bd, bs, counted;
+    static unsigned char c, am, dm, ba, bd, bs, counted, pbk;
     static struct pstyle *ps;
     fl_style(s);
     wr_x = i = brk = bx = vis = bvis = 0;
-    am = dm = counted = wr_any = 0;
+    am = dm = counted = wr_any = pbk = 0;
     if (wr_rn && p >= wr_at && p + 2 < wr_at + wr_rn)
         wr_ri = (unsigned char)(p - wr_at);   /* (the line before's window: a layout reads on) */
     else {
@@ -114,8 +114,10 @@ void wrap(pos_t p, unsigned char s)
             }
             wr_scan();
             i += wr_n;
-            if (wr_n)
+            if (wr_n) {
                 vis = wr_x;
+                pbk = 2;                /* (a character: no page break's paragraph) */
+            }
             if (wr_ovf) {
                 if (brk) {
                     i = brk;
@@ -136,7 +138,8 @@ void wrap(pos_t p, unsigned char s)
                 s = wr_rb[wr_ri + 1];
                 fl_style(s);
                 counted = 0;
-            }
+            } else if (c == K_PB)
+                pbk |= 1;
             wr_ri += 3;
             i += 3;
             continue;
@@ -160,6 +163,7 @@ void wrap(pos_t p, unsigned char s)
             wr_x += w;
             if (c == CH_TAB)
                 vis = wr_x;
+            pbk = 2;
             ++wr_ri;
             brk = ++i;
             ba = am;
@@ -190,6 +194,7 @@ void wrap(pos_t p, unsigned char s)
         wr_x += w;
         vis = wr_x;
         wr_any = 1;
+        pbk = 2;
         ++wr_ri;
         brk = ++i;
         ba = am;
@@ -219,6 +224,9 @@ void wrap(pos_t p, unsigned char s)
     }
     if (wr_f & LF_PARA)
         w += ps->after;
+    /* (1.4) a page break's own paragraph: the code and the CR, nothing else */
+    if (pbk == 1 && (wr_f & (LF_FIRST | LF_PARA)) == (LF_FIRST | LF_PARA))
+        wr_f |= LF_PB;
     wr_len = i;
     wr_w = vis;
     wr_a = bx > 250 ? 250 : (unsigned char)bx;
@@ -241,17 +249,21 @@ static unsigned char nb[NB * LT_SZ];
 static unsigned char nb_n;
 
 /* an entry (layout.c's lt_get reads it): the length's low byte; its
-   high bits (0-2), LF_ (3-4), the width's high bits (5-7); the width's
-   low byte, the height, the baseline, the style at its start, the
-   paragraph's style */
+   high bits (0-2), LF_PARA and LF_FIRST (3-4), the width's high bits
+   (5-6: 1,023 at most, the text 528 pixels wide at most), LF_PB (7); the
+   width's low byte, the height, the baseline, the style at its start,
+   the paragraph's style */
 static unsigned char *nb_e;             /* (nb + nb_n * LT_SZ) */
 
 static void nb_add(unsigned char s)
 {
     unsigned char *e = nb_e;
     nb_e += LT_SZ;
+    if (wr_w > 1023)
+        wr_w = 1023;                    /* (tabs past the edge) */
     e[0] = (unsigned char)wr_len;
-    e[1] = ((unsigned char)(wr_len >> 8) & 7) | wr_f << 3 | (unsigned char)(wr_w >> 8) << 5;
+    e[1] = ((unsigned char)(wr_len >> 8) & 7) | (wr_f & 3) << 3 | (unsigned char)(wr_w >> 8) << 5
+           | (wr_f & LF_PB ? 0x80 : 0);
     e[2] = (unsigned char)wr_w;
     e[3] = wr_h;
     e[4] = wr_a;
@@ -285,6 +297,7 @@ unsigned char lay_all(void)
     cb_clear(&lt);
     lt_n = 0;
     lw_n = 0;
+    sa_ok = 0;
     wr_rn = 0;                          /* (the text changed: no window) */
     nb_n = 0;
     nb_e = nb;
@@ -317,8 +330,8 @@ unsigned char lay_all(void)
     pg_lo = 0;
     pq_k = 0xFF;
     dm_on = 1;
-    dm_lo = 0;
-    dm_hi = tx.total;
+    dm_lo = de_lo = 0;
+    dm_hi = de_hi = tx.total;
     dm_delta = 0;
     return e;
 }
@@ -327,17 +340,24 @@ static unsigned int wi, oc;             /* the next new line's index; old lines 
 static unsigned int ob;                 /* old lines replaced so far */
 static unsigned char lay_e;
 
+/* the new lines in place of the old ones taken: as many as there are of
+   both written over them, the rest deleted or inserted (W43: deleting
+   all and inserting all moved the table's chunk twice a key, its bytes
+   after the place; 8 KB at most each time) */
 static void commit(void)
 {
-    unsigned int k = oc;
+    unsigned int k = oc, m;
     lw_n = 0;
     if (lt_n - k + nb_n > LT_LINES) {
         lay_e = 1;                      /* (too many lines: the new ones dropped) */
         nb_n = 0;
     }
-    if (k)
-        cb_delete(&lt, (pos_t)wi * LT_SZ, (pos_t)k * LT_SZ);
-    if (nb_n && cb_insert(&lt, (pos_t)wi * LT_SZ, nb, nb_n * LT_SZ))
+    m = k < nb_n ? k : nb_n;
+    if (m)
+        cb_write(&lt, (pos_t)wi * LT_SZ, nb, m * LT_SZ);
+    if (k > m)
+        cb_delete(&lt, (pos_t)(wi + m) * LT_SZ, (pos_t)(k - m) * LT_SZ);
+    if (nb_n > m && cb_insert(&lt, (pos_t)(wi + m) * LT_SZ, nb + m * LT_SZ, (nb_n - m) * LT_SZ))
         lay_e = 1;
     lt_n = lt_n - k + nb_n;
     wi += nb_n;
@@ -379,8 +399,10 @@ unsigned char lay_fix(void)
     ob = 0;
     nb_n = 0;
     nb_e = nb;
+    PM("lf<");
     for (;;) {
         wrap(P, S);
+        PM("wrap");
         nb_add(S);
         P += wr_len;
         S = wr_s;
@@ -404,8 +426,13 @@ unsigned char lay_fix(void)
             /* an old line that starts after the edits, where this one ends */
             if ((pos_t)((long)op + d_delta) == P) {
                 lt_get(wi + oc, &l);
-                /* (the empty last line hangs on the CR before it) */
-                if (l.s == S && l.len && (l.f & LF_FIRST) == lc_first && (lc_first || l.p == lc_ps))
+                /* (the empty last line hangs on the CR before it; W43: a
+                   line that starts a paragraph has LF_FIRST, lc_first is
+                   LF_PARA then: compared as they were, 2 and 1, no line
+                   at a paragraph's start was ever in step, and a key
+                   wrapped again every line to the next paragraph's
+                   second, or to the document's end) */
+                if (l.s == S && l.len && !(l.f & LF_FIRST) == !lc_first && (lc_first || l.p == lc_ps))
                     break;              /* in step with the old lines again */
             }
         }
@@ -423,7 +450,9 @@ unsigned char lay_fix(void)
         if (lay_busy && !(wi & 31) && !nb_n)
             lay_busy();
     }
+    PM("lf>");
     commit();
+    PM("commit");
     an_i = ae_i = L;
     an_pos = ae_pos = P0;
     lay_c0 = L;

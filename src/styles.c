@@ -138,6 +138,8 @@ unsigned char FASTCALL style_at(pos_t p)
     unsigned char s, k;
     if (p > tx.total)
         p = tx.total;
+    if (sa_ok && p == sa_pos)
+        return sa_s;                    /* (W43: the last answer, the text as it was) */
     lt_find(p);
     lt_get(lf_i, &l);
     s = l.s;
@@ -158,6 +160,9 @@ unsigned char FASTCALL style_at(pos_t p)
             break;
         q += i;
     }
+    sa_pos = p;
+    sa_s = s;
+    sa_ok = 1;
     return s;
 }
 

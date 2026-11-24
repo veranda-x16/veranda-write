@@ -56,6 +56,7 @@ const struct pstyle named[PK_N] = {
 
 void tx_reset(void)
 {
+    sa_ok = 0;
     cb_clear(&tx);
 }
 

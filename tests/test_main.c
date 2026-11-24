@@ -17,6 +17,14 @@
       three line ends and UTF-8.
    4. a big document (200 KB, more than the X16's main RAM): typed in
       pieces, edited at both ends, saved, loaded.
+   5-6. paging; the pages (v/pages.c) with page breaks against counting
+      every line.
+   7. stage 3 (W44-W48): the header's and footer's fields; the page setup
+      (CWRD 1.4's PAGE: defaults, checks, saved and read back, older
+      files); page breaks typed (their lines, the pages they start, the
+      view's page starts); the PDF (pdf.c: its pages as the pages',
+      its cross-reference table, its text; build/host's PDF files, which
+      tools/check_pdf.py checks after with qpdf and pdftotext).
 
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #include <stdio.h>
@@ -464,7 +472,9 @@ static void test_doc(void)
             for (i = 0; i < n; ++i) {
                 s[0] = (unsigned char)('A' + rnd(26));
                 ul_step(U_TYPE, p, p);
+                cb_split = 1;           /* (as ui.c types: W43's split) */
                 p = doc_insert(p, s, 1, t);
+                cb_split = 0;
                 memmove(cur_m.a + k + 1, cur_m.a + k, sizeof cur_m.a[0] * (cur_m.n - k));
                 cur_m.a[k].c = s[0];
                 cur_m.a[k].font = sty[t].font;
@@ -828,7 +838,7 @@ static void test_file(void)
     saved = cur_m;
     flen = 0;
     CHECK(fmt_save(wr, decpos[ndec / 2]) == 0, "save");
-    CHECK(!memcmp(file, "CWRD\1\3", 6), "the header (1.3)");
+    CHECK(!memcmp(file, "CWRD\1\4", 6), "the header (1.4)");
     CHECK(!memcmp(file + 8, "INFO", 4) && file[22] == CS_L10, "INFO: the set ISO-8859-16 (1.3)");
     doc_new();
     fpos = 0;
@@ -966,7 +976,7 @@ static void test_file(void)
                 break;
             }
         flen = 0;
-        CHECK(fmt_save(wr, 0) == 0 && file[5] == 3 && file[22] == CS_L10, "Polish: saved as 1.3, ISO-8859-16");
+        CHECK(fmt_save(wr, 0) == 0 && file[5] == 4 && file[22] == CS_L10, "Polish: saved as 1.4, ISO-8859-16");
         doc_new();
         fpos = 0;
         CHECK(fmt_load(rd) == 0 && fmt_cs == CS_L10 && !fmt_lost, "Polish: read back (set %u, %u lost)", fmt_cs, fmt_lost);
@@ -1629,11 +1639,30 @@ static void test_big(unsigned int keep)
   6. the pages (src/v/pages.c): opened a step at a time, edited here and
   there, against counting every line
  ---------------------------------------------------------------*/
-unsigned int pg_arg, pg_pc, pg_lc, pg_tot, pg_line;
+unsigned int pg_arg, pg_pc, pg_lc, pg_tot, pg_line, pv_pg;
 unsigned char pg_est, pg_buf[36 * LT_SZ];
+#define VMAX_T 40
+unsigned char pv_st[(VMAX_T + 7) / 8];
 void e_pg_at(void);
 unsigned char e_pg_idle(void);
 void e_pg_first(void);
+void e_pg_view(void);
+
+/* a page break's paragraph before the paragraph at p (pgview.c's
+   t_pbreak: a Return first when p is inside one); where the cursor goes */
+static const unsigned char pb_bytes[4] = { K_PB, 0, K_PB, CH_CR };
+
+static pos_t ins_pbreak(pos_t p)
+{
+    pos_t q = par_start(p);
+    if (pos_norm(q) != p) {
+        p = doc_insert(p, (const unsigned char *)"\r", 1, style_typing(p));
+        q = par_start(p);
+    }
+    tx_ins(q, pb_bytes, 4);
+    lay_fix();
+    return pos_norm(q + 4);
+}
 static unsigned int bp[40000], bl[40000], btot;
 
 static void brute(void)
@@ -1647,7 +1676,7 @@ static void brute(void)
         h = acc + l.h;
         if (i + 1 < lt_n) {
             lt_get(i + 1, &m);
-            if (h && h + m.h > 775) {
+            if ((l.f & LF_PB) || (h && !(m.f & LF_PB) && h + m.h > pg_th)) {
                 ++page;
                 acc = 0;
                 ln = 1;
@@ -1674,6 +1703,18 @@ static void pg_check(const char *w, int exact)
     }
     if (exact)
         CHECK(!(pg_est & 2) && pg_tot == btot, "pages, %s: %u pages (a guess: %d), want %u", w, pg_tot, pg_est, btot);
+    /* the view's lines (pg_view): which start a page, the first's page */
+    for (k = 0; k < 6; ++k) {
+        unsigned int j;
+        ln = rnd(lt_n);
+        pg_arg = ln;
+        e_pg_view();
+        CHECK(pv_pg == bp[ln], "pages, %s: the view from line %u on page %u, want %u", w, ln, pv_pg, bp[ln]);
+        for (j = 0; j < VMAX_T && ln + j < lt_n; ++j)
+            CHECK(!!(pv_st[j >> 3] & (1 << (j & 7))) == (ln + j && bl[ln + j] == 1),
+                  "pages, %s: the view's line %u (%u): a page start %d, want %d", w, j, ln + j,
+                  !!(pv_st[j >> 3] & (1 << (j & 7))), bl[ln + j] == 1);
+    }
 }
 
 /* the idle walk to its end (a walk that never ends: a failure) */
@@ -1703,6 +1744,8 @@ static void test_pages(void)
         para[n++] = CH_CR;
         ul_step(U_CMD, p, p);
         p = doc_insert(p, para, n, i % 5 == 0 ? b : i % 11 == 0 ? big : 0);
+        if (i % 23 == 22)
+            p = ins_pbreak(p);          /* (W45: page breaks here and there) */
     }
     flen = 0;
     fmt_save(wr, 0);
@@ -1726,7 +1769,8 @@ static void test_pages(void)
     for (k = 0; k < 300; ++k) {         /* edits here and there, the status after each */
         p = pos_norm(rnd((unsigned int)DOC_LEN));
         ul_step(U_CMD, p, p);
-        switch (rnd(4)) {
+        switch (rnd(5)) {
+        case 4: ins_pbreak(p); break;
         case 0: doc_insert(p, (const unsigned char *)"some words typed here ", 22, 0); break;
         case 1: doc_insert(p, (const unsigned char *)"\r", 1, 0); break;
         case 2:
@@ -1937,6 +1981,385 @@ static void test_latin_paged(void)
     }
 }
 
+
+/*---------------------------------------------------------------
+  7. stage 3: the page setup, page breaks, the header and footer, PDF
+ ---------------------------------------------------------------*/
+static void test_hf(void)
+{
+    hf_name = "Report";
+    strcpy(hf_date, "23 November 2026");
+    hf_make("Page {page} of {pages}", 3, 12);
+    CHECK(!hf_part[0][0] && !strcmp(hf_part[1], "Page 3 of 12") && !hf_part[2][0],
+          "hf: centred: [%s] [%s] [%s]", hf_part[0], hf_part[1], hf_part[2]);
+    hf_make("{name}|{date}", 1, 1);
+    CHECK(!strcmp(hf_part[0], "Report") && !hf_part[1][0] && !strcmp(hf_part[2], "23 November 2026"),
+          "hf: left|right: [%s] [%s] [%s]", hf_part[0], hf_part[1], hf_part[2]);
+    hf_make("a|{page}|c|d {x} {pag", 7, 9);
+    CHECK(!strcmp(hf_part[0], "a") && !strcmp(hf_part[1], "7") && !strcmp(hf_part[2], "c|d {x} {pag"),
+          "hf: three parts: [%s] [%s] [%s]", hf_part[0], hf_part[1], hf_part[2]);
+    hf_make("{pages}{pages}{pages}{pages}{pages}{pages}{pages}{pages}{pages}{pages}{pages}{pages}"
+            "{pages}{pages}{pages}{pages}{pages}{pages}{pages}{pages}{pages}{pages}", 1, 65535);
+    CHECK(strlen(hf_part[1]) == HF_OUT - 1, "hf: a long line: %u bytes", (unsigned int)strlen(hf_part[1]));
+    hf_make("", 1, 1);
+    CHECK(!hf_part[0][0] && !hf_part[1][0] && !hf_part[2][0], "hf: an empty line");
+    printf("header and footer fields: ok\n");
+}
+
+static unsigned char fl2[4000];
+static unsigned long fl2n;
+
+static void test_pagesetup(void)
+{
+    struct pgset a;
+    unsigned char e, i;
+    unsigned long k;
+    /* the defaults: A4, 2.5 cm */
+    doc_new();
+    CHECK(pgs.paper == PP_A4 && pgs.w == 11906 && pgs.h == 16838 && pgs.left == 1417,
+          "page: the default %u %u x %u, %u", pgs.paper, pgs.w, pgs.h, pgs.left);
+    CHECK(wrap_w == 504 && pg_th == 778, "page: A4 2.5 cm: the text %u x %u, want 504 x 778", wrap_w, pg_th);
+    /* Letter, 1 inch: 6.5 x 9 inches */
+    pgs_paper(PP_LETTER);
+    pgs.left = pgs.right = pgs.top = pgs.bottom = 1440;
+    pg_apply();
+    CHECK(wrap_w == 520 && pg_th == 720, "page: Letter 1 in: the text %u x %u, want 520 x 720", wrap_w, pg_th);
+    /* nonsense mended: margins past the paper, a paper of nothing, too wide */
+    pgs.left = 9000;
+    pgs.right = 9000;
+    pg_apply();
+    CHECK(pgs.left == 1440 && pgs.right == 1440 && wrap_w == 520, "page: margins past the paper: %u %u", pgs.left, pgs.right);
+    pgs.w = 100;
+    pgs.paper = 7;
+    pg_apply();
+    CHECK(pgs.paper == PP_A4 && pgs.w == 11906, "page: no paper: %u %u", pgs.paper, pgs.w);
+    pgs.left = pgs.right = 0;
+    pg_apply();
+    CHECK(wrap_w == TXW_MAX, "page: no margins: the text %u (the screen's %u at most)", wrap_w, TXW_MAX);
+    memset(pgs.head, 'x', sizeof pgs.head);
+    pg_apply();
+    CHECK(strlen(pgs.head) == HF_MAX, "page: a header not ended: %u", (unsigned int)strlen(pgs.head));
+    /* saved (1.4, PAGE before TEXT) and read back */
+    doc_new();
+    doc_insert(0, (const unsigned char *)"Page one\r", 9, 0);
+    pgs_paper(PP_LETTER);
+    pgs.top = 1800;
+    pgs.bottom = 1080;
+    pgs.left = 1296;
+    pgs.right = 1584;
+    pgs.flags = PS_NOFIRST;
+    strcpy(pgs.head, "{name}|Draft");
+    strcpy(pgs.foot, "Page {page} of {pages}");
+    pg_apply();
+    memcpy(&a, &pgs, PGS_N);
+    flen = 0;
+    e = fmt_save(wr, 0);
+    CHECK(!e && file[4] == 1 && file[5] == 4, "page: saved %u, version %u.%u", e, file[4], file[5]);
+    for (k = 8, i = 0; k + 8 <= flen; k += 8 + (file[k + 4] | (unsigned long)file[k + 5] << 8)) {
+        if (!memcmp(file + k, "PAGE", 4)) {
+            CHECK(file[k + 4] == PGS_N && file[k + 5] == 0, "page: PAGE's length %u", file[k + 4]);
+            CHECK(!memcmp(file + k + 8, &a, PGS_N), "page: PAGE's bytes");
+            i |= 1;
+        }
+        if (!memcmp(file + k, "TEXT", 4)) {
+            CHECK(i & 1, "page: PAGE after TEXT");
+            i |= 2;
+        }
+    }
+    CHECK(i == 3, "page: the chunks PAGE and TEXT: %u", i);
+    memcpy(fl2, file, flen);
+    fl2n = flen;
+    doc_new();
+    CHECK(pgs.paper == PP_A4 && wrap_w == 504, "page: New: the default again");
+    fpos = 0;
+    e = fmt_load(rd);
+    CHECK(!e && !memcmp(&pgs, &a, PGS_N) && wrap_w == (12240 - 1296 - 1584) / 18 && pg_th == (15840 - 1800 - 1080) / 18,
+          "page: read back: %u, the text %u x %u", e, wrap_w, pg_th);
+    /* a 1.3 file (no PAGE): the default for new documents (the user's) */
+    pgs_def.paper = PP_LETTER;
+    pgs_def.w = 12240;
+    pgs_def.h = 15840;
+    pgs_def.left = pgs_def.right = pgs_def.top = pgs_def.bottom = 1440;
+    for (k = 8; k + 8 <= flen; k += 8 + (file[k + 4] | (unsigned long)file[k + 5] << 8))
+        if (!memcmp(file + k, "PAGE", 4)) {
+            memcpy(file + k, "PAGX", 4);        /* (a chunk a 1.3 reader does not know) */
+            break;
+        }
+    file[5] = 3;
+    fpos = 0;
+    e = fmt_load(rd);
+    CHECK(!e && pgs.paper == PP_LETTER && pgs.left == 1440 && !pgs.head[0] && wrap_w == 520,
+          "page: a 1.3 file: %u, paper %u, the text %u", e, pgs.paper, wrap_w);
+    memcpy(&pgs_def, &a, 2);
+    pgs_def.paper = PP_A4;                      /* (the built-in default again) */
+    pgs_def.w = 11906;
+    pgs_def.h = 16838;
+    pgs_def.left = pgs_def.right = pgs_def.top = pgs_def.bottom = 1417;
+    pgs_def.flags = 0;
+    /* a later version's longer PAGE: its first 142 bytes */
+    memcpy(file, fl2, fl2n);
+    flen = fl2n;
+    for (k = 8; k + 8 <= flen; k += 8 + (file[k + 4] | (unsigned long)file[k + 5] << 8))
+        if (!memcmp(file + k, "PAGE", 4)) {
+            memmove(file + k + 8 + PGS_N + 10, file + k + 8 + PGS_N, flen - (k + 8 + PGS_N));
+            memset(file + k + 8 + PGS_N, 0x5A, 10);
+            file[k + 4] = PGS_N + 10;
+            flen += 10;
+            break;
+        }
+    file[5] = 9;
+    fpos = 0;
+    e = fmt_load(rd);
+    CHECK(!e && !memcmp(&pgs, &a, PGS_N), "page: a longer PAGE (1.9): %u", e);
+    printf("page setup: ok (A4 %ux%u, Letter %ux%u; saved as 1.4 and read back; 1.3 and 1.9 files)\n",
+           504, 778, 520, 720);
+    doc_new();
+}
+
+/* the page breaks: their lines, the pages they start */
+static void test_breaks(void)
+{
+    unsigned int i, n = 0;
+    struct line l;
+    pos_t c;
+    doc_new();
+    c = doc_insert(0, (const unsigned char *)"First page.\rSecond", 18, 0);
+    c = ins_pbreak(c);                          /* (at "Second"'s end: a Return first) */
+    c = doc_insert(c, (const unsigned char *)"Third page.", 11, 0);
+    c = ins_pbreak(pos_norm(9));                /* (inside "First page.": split) */
+    c = ins_pbreak(0);                          /* (at the start: a page break first) */
+    for (i = 0; i < lt_n; ++i) {
+        lt_get(i, &l);
+        if (l.f & LF_PB) {
+            ++n;
+            CHECK(l.len == 4 && !l.w, "breaks: a break's line %u: %u bytes, width %u", i, l.len, l.w);
+        }
+    }
+    CHECK(n == 3, "breaks: %u page breaks' lines, want 3", n);
+    brute();
+    pg_idle_all("breaks");
+    pg_arg = 0;
+    e_pg_at();
+    CHECK(pg_tot == 4 && btot == 4, "breaks: %u pages (counted %u), want 4", pg_tot, btot);
+    /* typing into a break's paragraph: it does nothing (no LF_PB) */
+    doc_insert(0, (const unsigned char *)"x", 1, 0);
+    lt_get(0, &l);
+    CHECK(!(l.f & LF_PB), "breaks: typed into: still a break's line");
+    brute();
+    CHECK(btot == 3, "breaks: typed into: %u pages, want 3", btot);
+    /* the file keeps them */
+    flen = 0;
+    fmt_save(wr, 0);
+    fpos = 0;
+    fmt_load(rd);
+    for (i = 0, n = 0; i < lt_n; ++i) {
+        lt_get(i, &l);
+        n += (l.f & LF_PB) != 0;
+    }
+    CHECK(n == 2, "breaks: read back: %u breaks' lines, want 2", n);
+    printf("page breaks: ok\n");
+}
+
+/* the PDF: written into a file (build/host/NAME.pdf) and kept for the checks */
+static unsigned char *pdf_buf;
+static unsigned long pdf_n, pdf_cap;
+static unsigned int pdf_stop_at;
+static int pdf_list;
+
+unsigned char FASTCALL plat_pdf_out(unsigned int n)
+{
+    if (pdf_n + n > pdf_cap) {
+        pdf_cap = (pdf_n + n) * 2;
+        pdf_buf = realloc(pdf_buf, pdf_cap);
+    }
+    memcpy(pdf_buf + pdf_n, iobuf, n);
+    pdf_n += n;
+    return 0;
+}
+
+unsigned char plat_pdf_poll(void)
+{
+    return pdf_stop_at && pdf_page >= pdf_stop_at;
+}
+
+extern unsigned int pdf_first[8192];
+
+/* the document as a PDF: its pages the pages' (pdf_first: each one's
+   first line), the cross-reference table's offsets at their objects,
+   startxref at the table; written to build/host/name.pdf */
+static unsigned int pdf_check(const char *name)
+{
+    char path[80], *q;
+    unsigned long x, k, o;
+    unsigned int i, n, bad = 0;
+    FILE *f;
+    pg_idle_all("pdf");
+    pg_arg = 1;
+    e_pg_first();
+    pdf_pages = pg_tot;
+    pdf_title = name;
+    hf_name = name;
+    strcpy(hf_date, "23 November 2026");
+    pdf_n = 0;
+    CHECK(pdf_write() == 0, "pdf %s: not written", name);
+    CHECK(pdf_n == pdf_size, "pdf %s: %lu bytes written, %lu counted", name, pdf_n, pdf_size);
+    CHECK(pdf_page == pg_tot, "pdf %s: %u pages, the document %u", name, pdf_page, pg_tot);
+    brute();
+    for (i = 1, n = 1; i <= pdf_page && i < 8192; ++i) {
+        while (n < lt_n && bp[n] < i)
+            ++n;
+        if (i == 1)
+            n = 0;
+        if (pdf_first[i] != n && bad++ < 3)
+            CHECK(0, "pdf %s: page %u starts at line %u, the pages' %u", name, i, pdf_first[i], n);
+    }
+    /* the trailer: startxref, the table */
+    pdf_buf[pdf_n] = 0;
+    q = strstr((char *)pdf_buf + pdf_n - 40, "startxref\n");
+    CHECK(q != 0, "pdf %s: no startxref", name);
+    x = q ? strtoul(q + 10, 0, 10) : 0;
+    CHECK(x < pdf_n && !memcmp(pdf_buf + x, "xref\n0 ", 7), "pdf %s: startxref %lu not at the table", name, x);
+    n = (unsigned int)strtoul((char *)pdf_buf + x + 7, 0, 10);
+    q = strchr((char *)pdf_buf + x + 7, '\n') + 1;
+    for (i = 0, bad = 0; i < n; ++i, q += 20) {
+        CHECK(q[18] == ' ' && q[19] == '\n', "pdf %s: xref entry %u not 20 bytes", name, i);
+        if (!i)
+            continue;
+        o = strtoul(q, 0, 10);
+        k = (unsigned long)sprintf(path, "%u 0 obj", i);
+        if ((o + k > pdf_n || memcmp(pdf_buf + o, path, k)) && bad++ < 3)
+            CHECK(0, "pdf %s: object %u's offset %lu is not its", name, i, o);
+    }
+    sprintf(path, "build/host/%s.pdf", name);
+    f = fopen(path, "wb");
+    if (f) {
+        fwrite(pdf_buf, 1, pdf_n, f);
+        fclose(f);
+    }
+    f = fopen("build/host/pdf.txt", pdf_list++ ? "a" : "w");   /* (tools/check_pdf.py's list) */
+    if (f) {
+        fprintf(f, "%s %u\n", name, pdf_page);
+        fclose(f);
+    }
+    return pdf_page;
+}
+
+static void test_pdf(void)
+{
+    /* every style, every paragraph style, Polish, page breaks, a header
+       and footer with fields */
+    static const char *const words[] = {
+        "Za\xBF\xF3\xB3\xE5 g\xFD\xF7l\xA2 ja\xAE\xF1", "plain", "bold", "italic", "underlined", "mono", "big",
+        "(paren) back\\slash"
+    };
+    static unsigned char t[200];
+    unsigned char st[8], pl, pc, pr, pj, pq, pb, pn, h1;
+    unsigned int i, k, n, pages;
+    pos_t c = 0;
+    doc_new();
+    st[0] = 0;                                  /* (each word in its style) */
+    st[1] = 0;
+    st[2] = sty_find(0, 12, SF_BOLD, 0);
+    st[3] = sty_find(0, 12, SF_ITALIC, 0);
+    st[4] = sty_find(0, 12, SF_ULINE, 0);
+    st[5] = sty_find(font_index("Gate Mono"), 10, 0, 0);
+    st[6] = sty_find(0, 18, SF_BOLD | SF_ITALIC, 0);
+    st[7] = sty_find(0, 9, 0, 0);
+    {
+        struct pstyle q = named[PK_BODY];
+        q.align = PA_CENTRE; pc = par_find(&q);
+        q.align = PA_RIGHT; pr = par_find(&q);
+        q.align = PA_JUSTIFY; pj = par_find(&q);
+        pl = 0;
+        pq = par_find(&named[PK_QUOTE]);
+        pb = par_find(&named[PK_BULLET]);
+        pn = par_find(&named[PK_NUMBER]);
+        h1 = par_find(&named[PK_H1]);
+    }
+    for (i = 0; i < 60; ++i) {
+        /* a paragraph of words in styles; its paragraph style */
+        n = 0;
+        for (k = 0; k < 12 + i % 17; ++k) {
+            const char *w = words[(i + k) % 8];
+            unsigned char sty_k = st[(i + k) % 8];
+            n = (unsigned int)strlen(w);
+            memcpy(t, w, n);
+            t[n++] = ' ';
+            c = doc_insert(c, t, n, sty_k);
+        }
+        c = doc_insert(c, (const unsigned char *)"\r", 1, 0);
+        k = i % 8;
+        tk_a = tk_b = c;
+        if (k) {
+            pos_t q0 = par_start(pos_prev(c));
+            unsigned char ps = k == 1 ? pc : k == 2 ? pr : k == 3 ? pj : k == 4 ? pq : k == 5 ? pb : k == 6 ? pn : h1;
+            if (k >= 4 && k != 7) {
+                doc_named(q0, q0, k == 4 ? PK_QUOTE : k == 5 ? PK_BULLET : PK_NUMBER);
+            } else if (k == 7)
+                doc_named(q0, q0, PK_H1);
+            else
+                doc_para(q0, q0, PF_ALIGN, par[ps].align);
+            c = pos_norm(DOC_LEN);
+        }
+        if (i % 13 == 12)
+            c = ins_pbreak(c);
+    }
+    (void)pl;
+    strcpy(pgs.head, "{name}|Za\xBF\xF3\xB3\xE5|{date}");
+    strcpy(pgs.foot, "Page {page} of {pages}");
+    pgs.flags = PS_NOFIRST;
+    pages = pdf_check("styles");
+    CHECK(pages >= 5, "pdf styles: %u pages", pages);
+    /* Letter, other margins, no header and footer */
+    pgs_paper(PP_LETTER);
+    pgs.left = pgs.right = 1440;
+    pgs.head[0] = pgs.foot[0] = 0;
+    pg_apply();
+    lay_all();
+    pdf_check("letter");
+    /* stopped after page 2 */
+    pdf_stop_at = 2;
+    pg_arg = 1;
+    e_pg_first();
+    pdf_pages = pg_tot;
+    pdf_n = 0;
+    CHECK(pdf_write() == PE_STOP && pdf_page == 2, "pdf: stopped at page %u", pdf_page);
+    pdf_stop_at = 0;
+    /* an empty document: one page */
+    doc_new();
+    CHECK(pdf_check("empty") == 1, "pdf: an empty document: not one page");
+    printf("pdf: ok (%u pages, every style; a Letter one; stopped; an empty one)\n", pages);
+}
+
+/* the 300 KB document of test 6 with page breaks, a header and a footer:
+   a PDF of a few hundred pages, as the pages have them */
+static void test_pdf_big(void)
+{
+    static unsigned char para[600];
+    unsigned int i, j, n;
+    unsigned char b, it;
+    pos_t p = 0;
+    doc_new();
+    b = sty_find(0, 12, SF_BOLD, 0);
+    it = sty_find(0, 12, SF_ITALIC, 0);
+    for (i = 0; DOC_LEN < 300000; ++i) {
+        n = 0;
+        for (j = 0; j < 40 + (i * 37) % 400; ++j)
+            para[n++] = j % 7 == 6 ? ' ' : j % 31 == 5 ? 0xB3 : (unsigned char)('a' + (i + j) % 26);   /* (ł) */
+        para[n++] = CH_CR;
+        p = doc_insert(p, para, n, i % 5 == 0 ? b : i % 7 == 0 ? it : 0);
+        if (i % 41 == 40)
+            p = ins_pbreak(p);
+    }
+    ul_reset();
+    strcpy(pgs.head, "{name}||Page {page}");
+    strcpy(pgs.foot, "{page}/{pages}");
+    n = pdf_check("big");
+    printf("pdf, a big document: ok (%lu bytes of text, %u pages, %lu bytes of PDF)\n",
+           (unsigned long)DOC_LEN, n, pdf_n);
+    pgs.head[0] = pgs.foot[0] = 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 3 && !strcmp(argv[1], "gw"))
@@ -1966,6 +2389,16 @@ int main(int argc, char **argv)
         test_gw_big();
     if (!fails)
         test_latin_paged();
+    if (!fails)
+        test_hf();
+    if (!fails)
+        test_pagesetup();
+    if (!fails)
+        test_breaks();
+    if (!fails)
+        test_pdf();
+    if (!fails)
+        test_pdf_big();
     printf("%d checks, %d failures\n", checks, fails);
     return fails != 0;
 }

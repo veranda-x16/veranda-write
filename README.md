@@ -5,16 +5,44 @@ desktop for the X16): several fonts and sizes on a page, bold, italic and
 underline, many levels of undo and redo, documents much larger than the
 X16's main memory, its own file format. A sibling of Veranda Calc.
 
-This is **stage 2** of the plan below, with **geoWrite documents**
-opened (converted). MIT licence, Copyright (c) 2026 Marcin Spoczynski.
+This is **stage 3** of the plan below (pages, headers and footers,
+PDF), with **geoWrite documents** opened (converted). MIT licence,
+Copyright (c) 2026 Marcin Spoczynski.
 
 It was called **Commander Write** until Veranda 0.9.0 (DECISIONS W40).
 The repository keeps its name, `commander-write`; the program, its file
 (`Veranda Write.cvt`) and its menus are Veranda Write. Its GEOS class is
 still `CmdrWrite`, so documents made before open as they did.
 
-## Features (stages 1 and 2)
+## Features (stages 1 to 3)
 
+- **Pages** (stage 3): **File > Page setup** chooses the paper (A4 or US
+  Letter) and the margins (in centimetres on A4, inches on Letter), kept
+  in the document (`.cwr` 1.4); "For new documents" makes it the default
+  for new ones and for documents made before 1.4 (A4 with 2.5 cm margins
+  until then). The text wraps to the paper's width less the margins and
+  fills the paper's height less them: a line that does not fit starts
+  the next page. **Insert > Page break** (Ctrl+Return) ends a page where
+  you want; it shows as a dotted line labelled "Page break". The view
+  shows where each page ends: the page's footer, a grey band, the next
+  page's header. The status bar says "Page 3 of 12"; Word count and Go to
+  page count the same pages.
+- **A header and a footer** (Insert > Header and footer): one line each,
+  "centre", "left|right" or "left|centre|right", with the fields
+  {page}, {pages}, {date} and {name}; "Not on the first page"; in the
+  top and bottom margins, shown in the view between the pages.
+- **Export as PDF** (File > Export as PDF, Ctrl+Shift+P): a PDF 1.4 file
+  of the document, by default in `/DOCUMENTS` with the document's name:
+  its pages at the paper's size and margins, with the header and footer,
+  bold, italic and underline, the paragraph styles' sizes, alignment and
+  indents, lists, page breaks; the text in PDF's own fonts (Helvetica,
+  Courier for Gate Mono), selectable and searchable, Polish letters too.
+  It is written as it goes, a little at a time (a document of megabytes
+  needs no more memory than a page); the status bar shows the page, Esc
+  stops it.
+- **Printing**: the X16 has no standard printer, so Veranda Write prints
+  through PDF: export the document, copy the PDF to a PC (or open it from
+  the card there) and print it from any PDF viewer.
 - Text in **character styles**: any font in `/VERANDA/FONTS` (Gate Sans
   9, 12, 18, 27; Gate Mono 10, 12; the system font) at its sizes, **bold**,
   *italic*, underline, mixed freely on a line.
@@ -102,8 +130,17 @@ still `CmdrWrite`, so documents made before open as they did.
 | Ctrl+G | Find next (the panel open or not) |
 | Ctrl+Shift+G | Go to page |
 | Ctrl+Shift+D | Insert date and time |
+| Ctrl+Return | Insert a page break |
+| Ctrl+Shift+P | Export as PDF |
 | Alt + the same letters | the same |
 | Alt+Tab | put Veranda Write aside (Veranda's switcher) |
+
+In the page setup panel (File > Page setup, Insert > Header and footer):
+Tab and the up and down arrows move between its items, left and right
+(and Space) change the paper, a margin (a millimetre or a twentieth of
+an inch a step) or an option, typing edits the header or the footer,
+Return is OK, Esc Cancel; the pointer clicks its buttons, the margins'
+- and +, the fields and the options.
 
 In the find panel: typing goes to its field, Tab the other field,
 Backspace, Return finds the next, Alt+C Match case, Alt+W Whole word,
@@ -117,13 +154,14 @@ thumb a screen; the toolbar's pop-ups open their lists (the fonts, the
 sizes, the paragraph styles: press and drag to an item, or click and
 click), its buttons: B, I, U; left, centre, right, justify; a bulleted
 list, a numbered list (again: Body); indent less, more; the title band's
-close box closes the document. The **Style** menu has the named styles, **Format** the alignment,
+close box closes the document. **Insert** has a page break, the date and time, the header and
+footer. The **Style** menu has the named styles, **Format** the alignment,
 the indent, the line spacing and the space after paragraphs, **Font**
 the installed fonts, **Size** the sizes of the current font; Word count
 is in the Veranda Write menu, Find, Replace and Go to page in Edit,
-Insert date and time in Text.
+Page setup and Export as PDF in File.
 
-## Limits (stage 2, documents larger than RAM)
+## Limits (stage 3, documents larger than RAM)
 
 - Text is ASCII and Veranda's set above it, ISO-8859-16: Polish (Ą Ć Ę
   Ł Ń Ó Ś Ź Ż, typed with right Alt and Veranda's Polish keyboard on),
@@ -142,11 +180,17 @@ Insert date and time in Text.
   bigger one is refused at Open. With 512 KB the cache is about 20 banks
   (160 KB); with 2 MB a 1 MB document stays in RAM whole.
 - **Speed at 8 MHz** (the gate's 140,000-character document, 162 KB of
-  text, at 512 KB): a key typed and drawn in about 0.26 s, 8 keys queued
-  by fast typing and their drawing 0.34 s, Page Down 0.82 s (0.98 at
+  text, at 512 KB): Page Down 0.82 s (0.98 at
   most), its first screen 2.4 s after Open and all of it in 10.2 s
   (stage 2: 9.6 s before anything showed), a search through all of it
   1.7 s, Replace all of 624 words 26 s, saving 0.9 s.
+- **Typing at 8 MHz** (512 KB; from the key to its character and the
+  cursor on the screen, the status bar after them; DECISIONS W43, W45): at a
+  document's end 0.05 s, in a paragraph of 16 lines 0.1 s, in italic or
+  bold 0.12-0.13 s, Backspace 0.12 s, Return 0.19 s, in a list of
+  one-line paragraphs 0.08 s, in a 400 KB document 0.04-0.11 s. Keys
+  typed faster than that are taken together and drawn once (at least 5
+  times a second): 30 keys a second, none lost.
 - **A document larger than RAM** (an SD card image under R49, 512 KB):
   1 MB (980,000 characters, 12,000 lines): its first screen 3.3 s after
   Open, all of it read and wrapped in 75 s (only the line table's 7
@@ -154,7 +198,7 @@ Insert date and time in Text.
   from the card); Page Down 0.8-1.0 s; Go to page 2.8 s (all its pages
   counted); finding a word in its middle from the start 16 s (half of it
   read from the card: 8.8 s at 2 MB); a key typed in a chunk read back
-  0.42 s; saving 30 s (18 s at 2 MB); Alt+Tab puts it aside (28 banks
+  0.42 s; saving 30 s (18 s at 2 MB); Alt+Tab puts it aside (25 banks
   given to Veranda: all but the program's overlays, the undo log too
   out on the card) and brings it back. 4 MB (4.05 MB of text, 43,000
   lines): its first screen 3.3 s, all of it in 4 min 24 s; Ctrl+End
@@ -179,14 +223,29 @@ Insert date and time in Text.
 - The Text Scrap holds the first 60,000 characters of a copy (Veranda
   Write's own clipboard holds all of it).
 - A numbered list counts its paragraphs from 1 for each run of numbered
-  paragraphs; the pages are A4's 9.7 inches of text, nominal: a page break
-  (from a geoWrite document) is drawn but does not start a page yet, and
-  there is no command to make one (stage 3).
+  paragraphs.
+- **Pages**: A4 and US Letter (a document from elsewhere with another
+  paper keeps it); the text 3 to 6.6 inches wide (the screen's page: on
+  Letter the left and right margins together are 1.9 inches at least, on
+  A4 4.3 cm) and 3 inches high at least. One header and one footer, a
+  line of 63 characters each, in a small font in the view (Helvetica 9 in
+  the PDF). No widow and orphan control, no footnotes, no different
+  headers for odd and even pages. Page setup is not an undo step.
+- **The PDF** uses PDF's standard fonts (nothing embedded: the file is
+  small, and any PDF viewer has them): Helvetica for Gate Sans and the
+  other proportional fonts, Courier for Gate Mono, in their bold and
+  oblique forms. The lines and pages are the ones the screen has (Veranda
+  Write's own fonts measure them): a line is placed where the screen has
+  it and set in the PDF font from its paragraph's edge; a line the PDF
+  font makes wider than its paragraph is narrowed a little to fit.
+  Characters outside the Veranda set do not occur; tabs are every half
+  inch. At 8 MHz a PDF takes up to a second a page: a 350 KB document of
+  80 pages, its style changing every few words, in about a minute
+  (820 KB of PDF).
 - The Open dialog lists the geoWrite documents of the folder it opens in
   (read before it opens); in a folder chosen inside the dialog they are
   not listed (W27). Converting one takes an overlay's RAM bank: the
   largest document at 512 KB is about 8 KB smaller than stage 2's.
-- Pages, margins, headers and footers, printing: stage 3.
 
 ## Building
 
@@ -230,7 +289,19 @@ opens `.CWR` documents with it.
   description (pages, rulers, fonts, styles, a page break, a picture, a
   header and a footer, odd bytes) converted and checked, saved and read
   back, a page break deleted and undone, a converted document of 500 KB
-  with 6 banks free; a real one when `CW_GW_SAMPLE=path` names it. `build/host/test_cw SEED` runs another seed;
+  with 6 banks free; a real one when `CW_GW_SAMPLE=path` names it;
+  **stage 3**: the pages with page breaks in them (typed, typed into,
+  deleted by the edits) against counting every line, the view's page
+  starts; the header's and footer's fields and parts; the page setup's
+  defaults, its checks, `PAGE` saved and read back, a 1.3 file (the
+  default), a later version's longer `PAGE`; the PDF of a document of
+  every style and paragraph style (Polish in it, a header and a footer,
+  not on the first page), on Letter, stopped after two pages, of an empty
+  document, of a 300 KB document with page breaks: its pages the pages'
+  (each page's first line), its cross-reference table and startxref, then
+  (`tools/check_pdf.py`) its structure again, and with qpdf, pdfinfo and
+  pdftotext (when they are there) its pages, paper, header, footer and
+  text, Polish too. `build/host/test_cw SEED` runs another seed;
   `build/host/test_cw gw in.cvt out.cwr` converts a file.
 - `tools/gate.sh`: the X16 build in x16emu with Veranda booted, a
   scripted session (typing in styles, the menus, a selection made bold,
@@ -256,7 +327,20 @@ opens `.CWR` documents with it.
   original BIG.cwr unchanged, a stale swap folder put on the card
   removed). `BIGDOC=3500000 BIGRAM=512` runs a 4 MB one (`BIG_NOSTATE=1`
   for the script: the test build's sum of 4 MB takes minutes).
+  **Stage 3** (`SESSION=page`, ROM R49, 512 KB, a host folder and an SD
+  card image): page breaks from the menu and Ctrl+Return, the header and
+  footer typed in the panel, Letter clicked and the top margin stepped,
+  saved (1.4: `PAGE` read back on the PC) and opened again, exported as
+  PDF into `/DOCUMENTS` (its pages, paper, header and footer, not on the
+  first page, the typed text, Polish), documents of 1.1, 1.2 (a page
+  break) and 1.3 opened, a 300 KB document's pages counted and exported
+  (timed), an export stopped with Esc (its file gone), Go to page 5 (the
+  cursor where the PDF's page 5 starts); screenshots in `build/gate`
+  (`pbreak`, `hfpanel`, `bands`, `setup`, `pdfdlg`, `old`, `goto`,
+  `bigpages`) and `build/shots/`.
   `tools/swapbench/run.sh` measures the card's speeds for the swap.
+  `tools/speed.sh` times each key typed (the gate runs it: DECISIONS
+  W43).
   `tools/check_ovl.py` checks that no code calls into an overlay that may
   not be mapped.
 
@@ -264,11 +348,11 @@ opens `.CWR` documents with it.
 
 1. **Text**: character styles, undo, selection, the clipboard, the file
    format, word wrap, large documents, Alt+Tab.
-2. **Paragraphs** (this): paragraph styles (Heading 1-3, Body, Quote,
+2. **Paragraphs**: paragraph styles (Heading 1-3, Body, Quote,
    lists, alignment, indents, spacing), find and replace, word count,
    its own text drawing.
-3. Pages, margins, headers and footers, page numbers, footnotes,
-   printing and PDF (Veranda's PrintOpen/PrintBand).
+3. **Pages** (this): the page setup, page breaks, headers and footers
+   with page numbers, PDF export (the way to print). Footnotes: later.
 4. `.docx` and `.odt` import and export on the machine (Commander Calc's
    zip and deflate).
 5. Tables, pictures from Paint, a spelling checker with a dictionary on

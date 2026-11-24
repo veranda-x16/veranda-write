@@ -22,7 +22,13 @@
                 files (swapwh.c, swapio.c); the toolbar (tbar.c)
      overlay 13 the styles and paragraphs (styles.c), the pages (pages.c),
                 the toolbar's pop-ups (popup.c)
-     overlay 14 (test builds) the session's logs
+     overlay 14 the pages in the view: the rows and the bands between
+                the pages, a page break's line, the header and footer
+                made, Insert > Page break (pgview.c); the page setup
+                (page.c, hf.c)
+     overlay 15 the PDF (pdf.c, pdfx.c)
+     overlay 16 the page setup panel, File > Export as PDF (pgpanel.c)
+     overlay 17 (test builds) the session's logs
    callb() runs a function of another overlay and maps the caller's back.
 
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
@@ -72,7 +78,7 @@ extern unsigned int ta_bot;
 #define C_THUMB   4                     /* SELECT: a button on, an item lit */
 
 /* main.c */
-extern unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14;
+extern unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16, bank17;
 extern unsigned char sw_tbank;
 extern unsigned char cw_idle;           /* the main loop found nothing to do */
 void __fastcall__ callb(unsigned char b, void (*f)(void));
@@ -136,7 +142,10 @@ void rr_tables(void), rr_clear(void), rr_run(void), rr_blit(void), rr_dot(void);
 
 /* view.c (main RAM) */
 #define VMAX 40
-struct vrow { pos_t pos; unsigned int y, n; struct line l; };   /* a row: its line's entry, its list number */
+/* a row: its place, its y, its list number, its line's entry; the band
+   above it (g pixels: the page before's footer, the gap, the page's
+   header, W45) when it starts page pg */
+struct vrow { pos_t pos; unsigned int y, n; struct line l; unsigned char g; unsigned int pg; };
 extern struct vrow vr[VMAX];
 extern unsigned char vn;                /* rows shown */
 extern unsigned int top_line;
@@ -147,6 +156,7 @@ void __fastcall__ view_scroll(int n);   /* n lines (down > 0) */
 void view_cursor(unsigned char on);
 void view_blink(void);
 unsigned char cw_jiffies(void);        /* (glue.s) the ROM's jiffies, the low byte */
+unsigned char cw_keys(void);           /* (glue.s) keys waiting in the ROM's queue */
 void view_status(void);
 void view_toolbar(void);
 void view_title(void);                  /* the title band: the name, modified */
@@ -160,7 +170,10 @@ extern pos_t lw_start;                  /* line_x/line_hit: the line's start */
 /* the row under y (0xFF: none) */
 unsigned char __fastcall__ view_row(unsigned int y);
 void view_fix_cursor(void);             /* the cursor's line on the screen */
-void __fastcall__ v_pbreak(unsigned char i);  /* (view2.c) row i's page break's line */
+void __fastcall__ v_pbreak(unsigned char i);  /* (pgview.c) row i's page break's line */
+#define BAND_HF  14                     /* the bands between the pages (W45): a header's or footer's line, */
+#define BAND_GAP 10                     /*   the gap */
+void __fastcall__ v_band(unsigned char i);    /* (pgview.c) row i's band */
 /* pages.c (overlay 13): line pg_arg's page, its line there (pg_pc,
    pg_lc), the pages (pg_tot); pg_est 1: the page a guess, 2: the pages;
    pg_idle: counting on in idle time (1: more to do); pg_first: page
@@ -171,6 +184,11 @@ extern unsigned char pg_buf[];
 void pg_at(void);
 unsigned char pg_idle(void);
 void pg_first(void);
+/* pg_view: lines pg_arg .. + VMAX - 1, pv_st bit k: line pg_arg + k
+   starts a page; pv_pg: line pg_arg's page */
+extern unsigned char pv_st[(VMAX + 7) / 8];
+extern unsigned int pv_pg;
+void pg_view(void);
 
 /* ui.c (overlay 1) */
 void __fastcall__ ui_main(unsigned char opts);
@@ -198,7 +216,7 @@ void __fastcall__ sw_dclose(unsigned char h);
 
 /* menus.c (main RAM: the tables) */
 #define MI 12                           /* a list's items at most */
-#define NBAR 8                          /* the bar's: Veranda Write, File, Edit, Text, Style, Format, Font, Size */
+#define NBAR 9                          /* the bar's: Veranda Write, File, Edit, Insert, Text, Style, Format, Font, Size */
 struct mitem { const char *text; unsigned char type; void *p; };
 struct menu { unsigned char top, bottom; unsigned int left, right; unsigned char flags; struct mitem i[MI]; };
 extern struct menu mbar, msub;
@@ -209,7 +227,7 @@ extern unsigned char fm_n;              /* the Font menu's fonts */
 extern char fm_names[8][FONT_LEN];
 extern unsigned char sz_n, sz_list[10];  /* the Size menu's sizes */
 extern unsigned char menu_choice;       /* (a style, for sizes_fill) */
-extern const unsigned char mfirst[7];
+extern const unsigned char mfirst[8];
 
 /* tools.c (overlay 8) */
 extern unsigned char t_arg;             /* (main RAM) the argument of t_... */
@@ -217,6 +235,7 @@ void t_named(void);                     /* (findui.c, overlay 9) the named style
 void t_format(void);                    /* (overlay 9) the Format menu's item t_arg */
 void t_body(void);                      /* (overlay 9) after Return at a heading's end (kind t_arg) */
 void t_toolbar(void);                   /* (tbar.c, overlay 12) the toolbar and the ruler, when what they show changed */
+void t_status(void);                    /* (status.c, overlay 8) the status bar (view_status) */
 void t_ruler(void);                     /* (ruler.c, overlay 9) the ruler: paragraph style t_arg */
 void t_sbar(void);                      /* (sbar.c, overlay 7) the scroll bar, when its thumb moved */
 void menus_layout(void);
@@ -238,6 +257,17 @@ void fp_press(void);                    /* the pointer at r11 (x), r12 (y) */
 void fp_next(void);                     /* Find next (Ctrl+G) */
 void t_count(void), t_goto(void), t_date(void);   /* Word count, Go to page, Insert date and time */
 
+/* pgpanel.c (overlay 16): the page setup and header and footer panel
+   (t_arg: the item it opens at: 0 the paper, 5 the header), its keys,
+   the pointer (r11, r12); File > Export as PDF (W47) */
+extern unsigned char pp_on;
+void pp_open(void), pp_key(void), pp_press(void);
+void t_pdf(void);
+/* pgview.c (overlay 14): a page break typed; the user's default page
+   setup read from the card (W44) */
+void t_pbreak(void);
+void pg_loaddef(void);
+
 /* clip.c (overlay 7) */
 void clip_copy(void), clip_cut(void), clip_paste(void);
 
@@ -247,6 +277,7 @@ void test_tick(void);
 extern unsigned char test_log;
 void __fastcall__ test_key(unsigned char k);
 void test_drawn(void);
+void test_status(void);
 void test_aside(void);
 void __fastcall__ play_slow(unsigned char cur);
 extern unsigned char cur_on;            /* (view.c) the cursor shown */

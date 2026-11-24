@@ -8,7 +8,10 @@ session must log (tools/script.py: the characters, their styles' sum,
 modified, the document's name), the files it must leave (read with
 tools/cwrd.py: well formed, the characters and styles, or the texts they
 must contain), "CW ASIDE" / "CW DESK" / "CW BACK" (put aside and brought
-back), no "HUNG" or "PANIC"; the cursor's blink (W42, tools/check_blink.py:
+back), no "HUNG" or "PANIC"; (stage 3, W44-W48) the pages each state
+counted, the files' PAGE chunks and page breaks, the PDFs it wrote
+(tools/check_pdf.py: their structure, pages, paper and text), the ones it
+must not have left, the PDF's page that starts where Go to page went; the cursor's blink (W42, tools/check_blink.py:
 32 frames shown, 20 hidden, the main loop fast and slowed); the timings (CW TIME, TIME) printed in
 seconds at 8 MHz. --partial: a session stopped early (only what it got
 to).
@@ -23,8 +26,40 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cwrd  # noqa: E402
 import check_blink  # noqa: E402
+import check_pdf  # noqa: E402
 
 MHZ = 8e6
+
+
+def lat(con, labels):
+    """the timed keys ("CW LAT keys cycles": tools/play.s 'Q' and 'R'),
+    from a key put in the ROM's queue to the program's drawing after it
+    (the text and the cursor; "CW LATS": the status bar after them; "CW
+    DRAW": a drawing of keys none of them timed), each group up to the
+    state logged after it"""
+    keys, ts, st, nd = 0, [], [], 0
+    for m in re.finditer(r'CW LAT ([0-9A-F]{8}) ([0-9A-F]{8})|CW STATE ([0-9A-F]{8})|CW DRAW ([0-9A-F]{8})'
+                         r'|CW LATS ([0-9A-F]{8})', con):
+        if m.group(3):
+            if ts:
+                ts.sort()
+                st.sort()
+                n = int(m.group(3), 16)
+                print('keys %-55s %3d keys, %3d drawings: %4.0f ms median, %4.0f min, %4.0f max (%.1f frames)%s'
+                      % (labels.get(str(n), 'before state %d' % n) + ':', keys, nd, 1000 * ts[len(ts) // 2],
+                         1000 * ts[0], 1000 * ts[-1], 60 * ts[len(ts) // 2],
+                         '; the status bar %.0f ms' % (1000 * st[len(st) // 2]) if st else ''))
+            keys, ts, st, nd = 0, [], [], 0
+            continue
+        if m.group(5):
+            st.append(int(m.group(5), 16) / MHZ)
+            continue
+        nd += 1
+        if m.group(4):
+            keys += int(m.group(4), 16)
+            continue
+        keys += int(m.group(1), 16)
+        ts.append(int(m.group(2), 16) / MHZ)
 
 
 def main():
@@ -37,11 +72,11 @@ def main():
     if 'HUNG' in con or 'PANIC' in con:
         bad.append('the program hung or crashed: ' + con[con.find('HUNG') if 'HUNG' in con else con.find('PANIC'):][:80])
     got = {}
-    for m in re.finditer(r'CW STATE ((?:[0-9A-F]{8} ){12})(.*)', con):
+    for m in re.finditer(r'CW STATE ((?:[0-9A-F]{8} ){13})(.*)', con):
         f = [int(x, 16) for x in m.group(1).split()]
         got[f[0]] = {'len': f[1], 'lines': f[2], 'cur': f[3], 'anc': f[4], 'modified': f[5], 'style': f[6],
                      'top': f[7], 'sum': f[8], 'chars': f[9], 'banks': f[10] >> 8, 'free': f[10] & 255,
-                     'psum': f[11], 'name': m.group(2).strip()}
+                     'psum': f[11], 'pages': f[12], 'name': m.group(2).strip()}
     for n, want in exp['states']:
         g = got.get(n)
         if g is None:
@@ -59,10 +94,11 @@ def main():
                     bad.append('state %d: the cursor %d (%d) past the text\'s end %d' % (n, g['cur'], g['anc'], g['len']))
             elif g.get(k) != v:
                 bad.append('state %d: %s %r, want %r' % (n, k, g.get(k), v))
-        print('state %2d: %6d characters, %5d lines, sum %08X, paragraphs %08X, modified %d, banks %d (%d free) %s'
-              % (n, g['chars'], g['lines'], g['sum'], g['psum'], g['modified'], g['banks'], g['free'], g['name']))
-    if not partial:
-        for marker in ('CW ASIDE', 'CW DESK RESUME', 'CW BACK'):
+        print('state %2d: %6d characters, %5d lines, %4d pages, sum %08X, paragraphs %08X, modified %d, banks %d (%d free) %s'
+              % (n, g['chars'], g['lines'], g['pages'], g['sum'], g['psum'], g['modified'], g['banks'], g['free'],
+                 g['name']))
+    if not partial and exp.get('SESSION') != 'speed':
+        for marker in ('CW ASIDE', 'CW DESK RESUME', 'CW BACK') if exp.get('SESSION') != 'page' else ():
             if marker not in con:
                 bad.append('no "%s" (Alt+Tab)' % marker)
         for name, want in exp['files'].items():
@@ -97,6 +133,54 @@ def main():
                 bad.append('%s: %d characters, at least %d' % (name, len(ch), want['chars_min']))
             print('file %s: %d characters, %d styles, version %d.%d, chunks %s'
                   % (name, len(ch), len(d.styles), d.version[0], d.version[1], ' '.join(d.chunks)))
+    # stage 3: the files' page setups and page breaks, the PDFs
+    for name, want in exp.get('pagefile', {}).items() if not partial else []:
+        try:
+            d = cwrd.read(os.path.join(run, name))
+        except (OSError, cwrd.FormatError) as e:
+            bad.append('%s: %s' % (name, e))
+            continue
+        if d.page != want['page']:
+            bad.append('%s: PAGE %r, want %r' % (name, d.page, want['page']))
+        if d.pbreaks() != want['pbreaks']:
+            bad.append('%s: %d page breaks, want %d' % (name, d.pbreaks(), want['pbreaks']))
+        print('file %s: PAGE %s, %d page breaks' % (name, d.page, d.pbreaks()))
+    for want in exp.get('pdfs', []) if not partial else []:
+        p = os.path.join(run, want['path'])
+        if not os.path.exists(p):
+            bad.append('no PDF %s' % want['path'])
+            continue
+        n = want.get('pages') or got.get(want.get('pages_state'), {}).get('pages')
+        b, said = check_pdf.check(p, pages=n, size=want.get('size'), texts=want.get('texts', []),
+                                  on=want.get('on', []), off=want.get('off', []))
+        bad += b
+        print('pdf %s (%d bytes)' % (said, os.path.getsize(p)))
+    for a in exp.get('absent', []) if not partial else []:
+        if os.path.exists(os.path.join(run, a)):
+            bad.append('%s: still there' % a)
+    for c in exp.get('console', []) if not partial else []:
+        if c not in con:
+            bad.append('no "%s" in the log' % c)
+    ps = exp.get('pagestart')
+    if ps and not partial and ps['state'] in got and os.path.exists(os.path.join(run, ps['pdf'])):
+        # the text at the cursor (a byte of the document's text) is the PDF's page's first
+        d = cwrd.read(os.path.join(run, ps['doc']))
+        t, i, k = d.text, 0, got[ps['state']]['cur']
+        out = []
+        while i < len(t) and len(out) < 40:
+            if cwrd.K_FIRST <= t[i] <= cwrd.K_LAST:
+                i += 3
+                continue
+            if i >= k:
+                out.append(chr(t[i]) if t[i] != cwrd.CR else ' ')
+            i += 1
+        want = ' '.join(''.join(out).split()[:4])
+        r = check_pdf.subprocess.run(['pdftotext', '-f', str(ps['page']), '-l', str(ps['page']),
+                                      os.path.join(run, ps['pdf']), '-'], capture_output=True)
+        got_t = ' '.join(r.stdout.decode('utf-8', 'replace').split()[:4])
+        if want != got_t:
+            bad.append('Go to page %d: the cursor at "%s", the PDF\'s page starts "%s"' % (ps['page'], want, got_t))
+        print('go to page %d: "%s" (the PDF\'s page: "%s")' % (ps['page'], want, got_t))
     for m in re.finditer(r'CW MARK (\S+) ([0-9A-F]{8})', con):
         print('mark %s: %.3f s' % (m.group(1), int(m.group(2), 16) / MHZ))
     for m in re.finditer(r'CW SWAP ([0-9A-F]{8}) ([0-9A-F]{8})', con):
@@ -110,8 +194,14 @@ def main():
         print('time %s: %.3f s' % ({'l': 'open BIG.cwr (all of it)', 's': 'save BIG2.cwr',
                                      'f': 'find MIDDLEMARK from the start' if big else 'find in BIG.cwr (not found)',
                                      'r': 'replace all in BIG.cwr', 'e': 'Ctrl+End', 'h': 'Ctrl+Home',
-                                     'g': 'go to page 60', 'm': 'open BIG2.cwr again'}.get(m.group(1), m.group(1)),
+                                     'g': 'go to page 60', 'm': 'open BIG2.cwr again',
+                                     'p': 'export XBIG.cwr as PDF'}.get(m.group(1), m.group(1)),
                                     int(m.group(2), 16) / MHZ))
+    lat(con, exp.get('labels', {}))
+    for n, want in exp.get('lossy', {}).items():
+        g = got.get(int(n))
+        if g:
+            print('keys lost in state %s: %d (%d characters, %d typed)' % (n, want - g['chars'], g['chars'], want))
     if not partial and 'SESSION' not in exp:
         bb, blink = check_blink.check(con, 32, 20)
         bad += bb

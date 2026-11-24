@@ -423,7 +423,7 @@ void t_goto(void)
     r5 = (unsigned int)itext[2];
     r6 = (unsigned int)msg_b;
     view_cursor(0);
-    if (DoDlgBox(iobuf) == OK) {
+    if (DoDlgBox(iobuf) != CANCEL) {    /* (Return in the field ends it with DBGETSTRING, not OK: W48) */
         for (p = itext[2]; *p >= '0' && *p <= '9'; ++p)
             pg = pg * 10 + (*p - '0');
         if (pg < 1)

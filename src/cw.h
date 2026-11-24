@@ -22,6 +22,11 @@ void __fastcall__ test_mark(const char *what);
 #else
 #define MARK(s)
 #endif
+#if defined(CW_PROF) && defined(CW_TEST) && !defined(CW_HOST)
+#define PM(s) test_mark(s)
+#else
+#define PM(s)
+#endif
 
 #ifndef FASTCALL
 #ifdef CW_HOST
@@ -52,6 +57,7 @@ extern unsigned char host_mapped;
 unsigned char bk_get(void);             /* a bank of the pool, else a chunk's put out to the card (0: none) */
 void FASTCALL bk_put(unsigned char b);  /* back to the pool */
 unsigned char bk_free_n(void);          /* banks free in the pool now */
+unsigned char bk_cheap(void);           /* bk_get (a paged chunk's) would put nothing out to the card */
 extern unsigned char bk_owned;          /* banks the pool took in all */
 void bk_release(void);                  /* runs wholly free: back to the system */
 #define NRUN 24                         /* the runs the pool may take (Veranda's V57) */
@@ -88,12 +94,26 @@ struct cbuf {
 void cb_init(struct cbuf *c, unsigned char *bank, unsigned int *len, unsigned int max);
 void cb_initp(struct cbuf *c, unsigned char *bank, unsigned int *len, unsigned char pg, unsigned int max);
 void cb_clear(struct cbuf *c);          /* empty, its banks back to the pool */
-/* src in main RAM; 0 done, 1 no room (nothing changed) */
+/* src in main RAM; 0 done, 1 no room (nothing changed). cb_split (the
+   typing: ui.c's type): an insertion into the text with more than
+   CB_SPLIT bytes after it in its chunk splits the chunk there instead of
+   moving them, when a bank is to be had without putting a chunk out to
+   the card (W43: the characters typed after it go in at the chunk's end) */
+#ifdef CW_HOST
+#define CB_SPLIT 16                     /* (the tests' small documents split too) */
+#else
+#define CB_SPLIT 1024
+#endif
+extern unsigned char cb_split;
 unsigned char cb_insert(struct cbuf *c, pos_t at, const unsigned char *src, unsigned int n);
 void cb_delete(struct cbuf *c, pos_t at, pos_t n);
 unsigned int cb_read(struct cbuf *c, pos_t at, unsigned char *dst, unsigned int n);
 void cb_write(struct cbuf *c, pos_t at, const unsigned char *src, unsigned int n);
 unsigned char cb_byte(struct cbuf *c, pos_t at);
+/* style_at's last answer, kept until the text changes (lay_dirty, lay_all,
+   tx_reset: W43) */
+extern pos_t sa_pos;
+extern unsigned char sa_s, sa_ok;
 /* at the end, chunks filled to fill bytes (loading); 0 done, 1 no room.
    cb_src: where src's bytes are in the document's file (a new chunk
    starting there needs no copy in the swap), WH_NONE (the default: set
@@ -297,6 +317,7 @@ extern pos_t ul_cur, ul_anchor;
 #define LT_SZ    7
 #define LF_PARA  0x01                   /* the line ends its paragraph (CR) */
 #define LF_FIRST 0x02                   /* the line starts its paragraph */
+#define LF_PB    0x04                   /* (1.4) a page break's paragraph: its page ends after it */
 #define LEADING  2                      /* pixels between lines */
 #define TABW     40                     /* a tab stop every half inch */
 #define MAXLINE  1024                   /* bytes: a longer line is broken */
@@ -355,6 +376,66 @@ extern unsigned int lg_x0, lg_ex, lg_rem, lg_nsp;
 extern void (*lay_busy)(void);
 
 /*---------------------------------------------------------------
+  page.c: the page setup (CWRD 1.4, the PAGE chunk: docs/FORMAT.md);
+  hf.c: the header's and footer's fields
+ ---------------------------------------------------------------*/
+#define TW_PX      18                   /* twips (1/1440 inch) a pixel (80 an inch) */
+#define PP_A4      0                    /* the paper */
+#define PP_LETTER  1
+#define PP_OTHER   2
+#define PS_NOFIRST 0x01                 /* no header and footer on the first page */
+#define HF_MAX     63                   /* a header's or footer's bytes at most */
+#define TXW_MIN    240                  /* the text's width, pixels: 3 inches at least, */
+#define TXW_MAX    528                  /*   6.6 at most (the screen's page) */
+#define TXH_MIN    240                  /* its height on a page: 3 inches at least */
+struct pgset {                          /* the PAGE chunk as the file has it (142 bytes) */
+    unsigned char paper;                /* PP_ */
+    unsigned char flags;                /* PS_ */
+    unsigned short w, h;                /* the paper, twips */
+    unsigned short top, bottom, left, right;   /* the margins, twips */
+    char head[HF_MAX + 1], foot[HF_MAX + 1];   /* the header, the footer (0 ended) */
+};
+#define PGS_N 142
+extern struct pgset pgs;                /* the document's */
+extern struct pgset pgs_def;            /* a new document's (the user's default: the X16 reads it from the card) */
+extern unsigned int pg_th;              /* the text's height on a page, pixels */
+void pgs_default(void);                 /* pgs_def for the document, applied */
+void pg_apply(void);                    /* pgs checked; wrap_w and pg_th from it (the caller lays the text out again) */
+void FASTCALL pgs_paper(unsigned char k);   /* pgs's paper PP_A4 or PP_LETTER */
+/* the header or footer s ("centre", "left|right" or "left|centre|right";
+   the fields {page} {pages} {date} {name}) for page pg of n, in
+   hf_part[0] (left), [1] (centre), [2] (right) */
+#define HF_OUT 100
+extern char hf_part[3][HF_OUT];
+extern const char *hf_name;             /* {name}: the document's name */
+extern char hf_date[24];                /* {date}: "23 November 2026" */
+void FASTCALL hf_make(const char *s, unsigned int pg, unsigned int n);
+void hf_today(void);                    /* hf_date: today (the X16's clock) */
+/* is the header or footer s shown on page pg? */
+#define HF_ON(s, pg) ((s)[0] && ((pg) != 1 || !(pgs.flags & PS_NOFIRST)))
+
+/*---------------------------------------------------------------
+  pdf.c: the document as a PDF 1.4 file (DECISIONS W47)
+ ---------------------------------------------------------------*/
+#define PE_IO   1                       /* the file could not be written */
+#define PE_MEM  2                       /* no bank for the cross-reference table's offsets */
+#define PE_STOP 3                       /* stopped (plat_pdf_poll) */
+extern unsigned int pdf_pages;          /* (the caller's) the pages, for {pages}: pg_first's count */
+extern unsigned int pdf_page;           /* the page being written */
+extern unsigned long pdf_size;          /* the file's bytes so far */
+extern const char *pdf_title;           /* (the caller's) the PDF's title */
+unsigned char pdf_write(void);          /* the document; 0 done, else PE_ */
+/* the platform's: iobuf's first n bytes to the file (0 done); after each
+   page (progress): 1 stop */
+unsigned char FASTCALL plat_pdf_out(unsigned int n);
+unsigned char plat_pdf_poll(void);
+/* pdfhf.c: part k of the header (pdf_hfw 0) or footer (1) of page
+   pdf_hfp of pdf_hfn, as PDF content in iobuf; its bytes */
+extern unsigned char pdf_hfw;
+extern unsigned int pdf_hfp, pdf_hfn;
+unsigned int FASTCALL pdf_hf(unsigned char k);
+
+/*---------------------------------------------------------------
   find.c: find, replace all, the counts
  ---------------------------------------------------------------*/
 #define FD_MAX  40                      /* a pattern's characters at most */
@@ -393,7 +474,7 @@ extern unsigned char fl_bold, fl_a, fl_d;
  ---------------------------------------------------------------*/
 #define CW_MAGIC "CWRD"
 #define CW_MAJOR 1
-#define CW_MINOR 3                      /* (1.3: INFO's charset byte, W38) */
+#define CW_MINOR 4                      /* (1.3: INFO's charset byte, W38; 1.4: PAGE, W44) */
 #define CS_LATIN1  0                    /* INFO byte 6: the text's set: Latin-1 (1.0-1.2) */
 #define CS_L10     1                    /*   ISO-8859-16, the Veranda set (1.3: Veranda's V135) */
 typedef unsigned char (*cw_wfn)(const void *p, unsigned int n);   /* 0 written */
