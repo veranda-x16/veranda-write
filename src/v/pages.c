@@ -1,8 +1,12 @@
 /* Veranda Write on Veranda: the pages (overlay 13, with styles.c): the page and its
    line of any line, and how many pages there are, for the status bar,
-   Word count and Go to page. A page is A4's 9.7 inches of text (775
-   pixels at 80 an inch: nominal, until stage 3 makes pages): a line
-   starts the next page when it does not fit on this one.
+   Word count, Go to page and the view's bands between the pages. A page
+   holds pg_th pixels of text (the paper's height less its top and
+   bottom margins: page.c, W44): a line starts the next page when it does
+   not fit on this one, and the line after a page break's (LF_PB, W45)
+   always does; a page break's line itself is never moved to the next
+   page for its height (it would leave an empty page). The PDF's pages
+   (pdf.c) follow the same rule.
 
    Counting means walking the line table, which a big document keeps on
    the card (DECISIONS W29): so the walk is done once and remembered. The
@@ -26,8 +30,9 @@
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #ifdef CW_HOST
 #include "../cw.h"                      /* (the unit tests: tests/test_main.c) */
-extern unsigned int pg_arg, pg_pc, pg_lc, pg_tot, pg_line;
-extern unsigned char pg_est, pg_buf[];
+extern unsigned int pg_arg, pg_pc, pg_lc, pg_tot, pg_line, pv_pg;
+extern unsigned char pg_est, pg_buf[], pv_st[];
+#define VMAX 40
 #else
 #include "cwv.h"
 #pragma code-name ("OVERLAY13")
@@ -37,9 +42,11 @@ extern unsigned char pg_est, pg_buf[];
 #define pg_at    e_pg_at
 #define pg_idle  e_pg_idle
 #define pg_first e_pg_first
+#define pg_view  e_pg_view
 
-#define PAGE_H 775
-#define PE_MAX 240
+#define PAGE_H pg_th
+#define PE_MAX 224                      /* (240 until W45: overlay 13 had no room for the view's pages) */
+#define PBB(e) ((e)[1] & 0x80)          /* an entry's LF_PB */
 
 struct wk { unsigned int i, page, acc, ln; };   /* at line i: its page, the heights before it there, its line there */
 static unsigned int pe_l[PE_MAX], pe_p[PE_MAX];
@@ -66,27 +73,44 @@ static void refill(unsigned int i)
     hb_n = (unsigned char)(cb_read(&lt, (pos_t)i * LT_SZ, pg_buf, k * LT_SZ) / LT_SZ);
 }
 
-static unsigned char hgt(unsigned int i)
+/* line i's entry in pg_buf */
+static unsigned char *ent(unsigned int i)
 {
     if (i < hb_i || i >= hb_i + hb_n)
         refill(i);
-    return pg_buf[(unsigned char)(i - hb_i) * LT_SZ + 3];
+    return pg_buf + (unsigned char)(i - hb_i) * LT_SZ;
 }
 
-/* w one line on */
-static void step(struct wk *w)
+/* t on to line `to` (or the last line), a byte pointer through pg_buf:
+   the next line starts a page after a page break's line, or when it does
+   not fit (a page break's line always does). (W45: a function a line
+   through a struct pointer made the view's page starts take 30 ms a
+   key) */
+static void adv(unsigned int to)
 {
+    static unsigned char *e, b;
     static unsigned int h;
-    h = w->acc + hgt(w->i);
-    ++w->i;
-    if (w->i < lt_n && h && h + hgt(w->i) > PAGE_H) {
-        ++w->page;
-        w->acc = 0;
-        w->ln = 1;
+    if (t.i >= to || t.i + 1 >= lt_n)
         return;
+    e = ent(t.i);
+    while (t.i < to && t.i + 1 < lt_n) {
+        if ((unsigned char)(t.i - hb_i) + 1 >= hb_n) {
+            refill(t.i);                /* (this line and the next in the buffer) */
+            e = pg_buf;
+        }
+        h = t.acc + e[3];
+        b = e[1] & 0x80;
+        e += LT_SZ;
+        ++t.i;
+        if (b || (h && !(e[1] & 0x80) && h + e[3] > PAGE_H)) {
+            ++t.page;
+            t.acc = 0;
+            t.ln = 1;
+        } else {
+            t.acc = h;
+            ++t.ln;
+        }
     }
-    w->acc = h;
-    ++w->ln;
 }
 
 /* the walk on through the lines that start no page: up to n of them,
@@ -109,9 +133,11 @@ static unsigned int run(unsigned int n)
         e = pg_buf + (unsigned char)(fr.i - hb_i) * LT_SZ + 3;
         acc = fr.acc;
         for (m = 0; m < k; ++m) {
+            if (e[-2] & 0x80)
+                break;                  /* (a page break's line: step's) */
             h = acc + *e;
             e += LT_SZ;
-            if (h && h + *e > PAGE_H)
+            if (h && !(e[-2] & 0x80) && h + *e > PAGE_H)
                 break;                  /* (the next line starts a page: step's) */
             acc = h;
         }
@@ -125,14 +151,27 @@ static unsigned int run(unsigned int n)
 }
 
 /* the walk back to the last page start kept at or before line L */
+/* the page starts kept at or before line L among the first hi: a
+   binary search (pe_l[0] is line 0; W45: the walks from either end took
+   a millisecond or two of each key in a long document) */
+static unsigned char below(unsigned int L, unsigned char hi)
+{
+    static unsigned char lo, mid;
+    lo = 1;
+    while (lo < hi) {
+        mid = (unsigned char)(((unsigned int)lo + hi) >> 1);
+        if (pe_l[mid] <= L)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
 static unsigned char back(unsigned int L)
 {
     static unsigned char k;
-    k = vt;
-    while (k > 1 && pe_l[k - 1] > L)
-        --k;
-    if (!k)
-        k = 1;
+    k = below(L, vt ? vt : 1);
     fr.i = pe_l[k - 1];
     fr.page = pe_p[k - 1];
     fr.acc = 0;
@@ -173,16 +212,16 @@ static void change(unsigned int L, unsigned int o, unsigned int c)
     static unsigned char k;
     static int sh;
     sh = (int)(c - L) - (int)o;
-    for (k = 0; k < pe_n;) {
-        if (pe_l[k] > L) {
-            if (pe_l[k] < L + o) {
-                drop(k);
-                if (k < vt)
-                    --vt;
-                continue;
-            }
-            pe_l[k] += sh;
+    for (k = below(L, pe_n); k < pe_n;) {
+        if (pe_l[k] < L + o) {
+            drop(k);
+            if (k < vt)
+                --vt;
+            continue;
         }
+        if (!sh)
+            break;                      /* (the rest are where they were) */
+        pe_l[k] += sh;
         ++k;
     }
     if (ff_on) {
@@ -244,7 +283,9 @@ static unsigned char walk_on(unsigned int n)
             ff_on = 0;
             break;
         }
-        step(&fr);
+        t = fr;                         /* (one line on) */
+        adv(fr.i + 1);
+        fr = t;
         if (fr.acc || fr.ln != 1)
             continue;
         /* a page start: a guess here? */
@@ -301,14 +342,12 @@ void pg_at(void)
         walk_on(L - fr.i + 1 < 400 ? L - fr.i + 1 : 400);
     pg_est = 0;
     if (L < fr.i || fr_end) {
-        for (k = vt; k > 1 && pe_l[k - 1] > L; --k)
-            ;
+        k = below(L, vt);
         t.i = pe_l[k - 1];
         t.page = pe_p[k - 1];
         t.acc = 0;
         t.ln = 1;
-        while (t.i < L)
-            step(&t);
+        adv(L);
         pg_pc = t.page;
         pg_lc = t.ln;
     } else {
@@ -355,6 +394,49 @@ void pg_first(void)
     t.acc = 0;
     t.ln = 1;
     while (t.page < pg_arg && t.i + 1 < lt_n)
-        step(&t);
+        adv(t.i + 1);
     pg_line = t.i;
+}
+
+/* the view's lines pg_arg .. pg_arg + VMAX - 1 (pgview.c's rows_build):
+   pv_st's bit k set when line pg_arg + k starts a page (line 0 not),
+   pv_pg line pg_arg's page: counted from the last page start kept before
+   them that is not a guess (the walk need not be past them: W45, taking
+   it there cost 3.6 ms a key) */
+void pg_view(void)
+{
+    static const unsigned char bit[8] = { 1, 2, 4, 8, 16, 32, 64, 128 };
+    static unsigned int L, i, acc, h;
+    static unsigned char k, b, *e;
+    L = pg_arg;
+    drain();
+    for (k = 0; k < (VMAX + 7) / 8; ++k)
+        pv_st[k] = 0;
+    k = below(L, vt);
+    t.i = pe_l[k - 1];
+    t.page = pe_p[k - 1];
+    t.acc = 0;
+    t.ln = 1;
+    adv(L);
+    pv_pg = t.page;
+    /* the window's lines in one pass, as adv walks (W45: a call a line
+       took 1,600 cycles) */
+    i = t.i;
+    acc = t.acc;
+    e = ent(i);
+    for (k = 0;;) {
+        if (i && !acc)
+            pv_st[k >> 3] |= bit[k & 7];
+        if (++k >= VMAX || i + 1 >= lt_n)
+            break;
+        if ((unsigned char)(i - hb_i) + 1 >= hb_n) {
+            refill(i);
+            e = pg_buf;
+        }
+        h = acc + e[3];
+        b = e[1] & 0x80;
+        e += LT_SZ;
+        ++i;
+        acc = b || (h && !(e[1] & 0x80) && h + e[3] > PAGE_H) ? 0 : h;
+    }
 }

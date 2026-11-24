@@ -1,8 +1,9 @@
 # Veranda Write's document format (CWRD)
 
-Version 1.3 (1.0 plus paragraph styles: the `PARA` chunk and the `$11`
+Version 1.4 (1.0 plus paragraph styles: the `PARA` chunk and the `$11`
 code, 1.1; the page break, the `$12` code, 1.2; the text's character set
-in `INFO`, 1.3). A Veranda Write document is a plain file on the card (any
+in `INFO`, 1.3; the page setup, the `PAGE` chunk: the paper, the margins,
+the header and the footer, 1.4). A Veranda Write document is a plain file on the card (any
 FAT name; the program adds `.cwr` when a name has no extension, and
 Veranda's shell opens `.CWR` files with it). All numbers are little
 endian. `src/format.c` reads and writes it on the X16 and in the host
@@ -14,7 +15,7 @@ tests; `tools/cwrd.py` does the same on a PC.
 |---|---|---|
 | 0 | 4 | `CWRD` |
 | 4 | 1 | major version: 1 |
-| 5 | 1 | minor version: 3 (1.0's files: 0, 1.1's: 1, 1.2's: 2) |
+| 5 | 1 | minor version: 4 (1.0's files: 0, 1.1's: 1, 1.2's: 2, 1.3's: 3) |
 | 6 | 2 | flags: 0 (reserved) |
 
 A reader refuses a file whose major version is newer than its own. A
@@ -29,16 +30,50 @@ skipped. The order matters only where noted.
 
 | Tag | Since | Contents |
 |---|---|---|
-| `INFO` | 1.0 | 4 bytes: the cursor (a place in the text); 2: the text's width in pixels (520: 6.5 inches at 80 pixels an inch); 1: the text's character set (1.3; reserved, 0, before): 0 Latin-1 (ISO-8859-1), 1 ISO-8859-16 (Veranda's set); 1: reserved (0). Longer in later versions: read the first 8 bytes, skip the rest |
+| `INFO` | 1.0 | 4 bytes: the cursor (a place in the text); 2: the text's width in pixels at 80 an inch (520 until 1.3; in 1.4 the page setup's, as `PAGE` gives it: a reader takes `PAGE`'s); 1: the text's character set (1.3; reserved, 0, before): 0 Latin-1 (ISO-8859-1), 1 ISO-8859-16 (Veranda's set); 1: reserved (0). Longer in later versions: read the first 8 bytes, skip the rest |
 | `FONT` | 1.0 | 1 byte: n, then n names: a length byte and the name (Latin-1, at most 31 characters): the fonts the styles use, by the names Veranda's `LoadFont` takes ("Gate Sans", "System") |
 | `STYL` | 1.0 | 1 byte: n (1-128 in 1.0), then n character styles of 4 bytes: the font (an index into `FONT`), the size in points, the flags, the colour (0; reserved for later) |
 | `PARA` | 1.1 | 1 byte: n (1-32), then n paragraph styles of e bytes each, e = (the chunk's length - 1) / n: 8 in 1.1 (below); a later version may make them longer: read the first 8 of each. Style 0 is the style of every paragraph without a paragraph code. Must come before `TEXT`. Without it (a 1.0 file) there is style 0 only: Body |
-| `TEXT` | 1.0 | the text: the document's byte stream (below). Must come after `FONT`, `STYL` and `PARA` |
+| `PAGE` | 1.4 | the page setup: 142 bytes (below); a later version may make it longer: read the first 142. Must come before `TEXT`. Without it (a file of 1.0-1.3) the document has the default page setup of the program that opens it |
+| `TEXT` | 1.0 | the text: the document's byte stream (below). Must come after `FONT`, `STYL`, `PARA` and `PAGE` |
 | `END ` | 1.0 | length 0: the end |
 
-Reserved for later versions (stage 3 and on): `PAGE` (the page: size,
-margins, headers and footers, page numbers), `NOTE` (footnotes), `OBJS`
-(tables, pictures), `META` (title, author, dates).
+Reserved for later versions: `NOTE` (footnotes), `OBJS` (tables,
+pictures), `META` (title, author, dates).
+
+**The page setup** (`PAGE`, 1.4; sizes in twips, 1/1440 inch, 16 bits):
+
+| Offset | Size | Contents |
+|---|---|---|
+| 0 | 1 | the paper: 0 A4 (11906 x 16838), 1 US Letter (12240 x 15840), 2 another (its size below) |
+| 1 | 1 | flags: bit 0, no header and footer on the first page; bits 1-7 reserved (0) |
+| 2 | 2 | the paper's width |
+| 4 | 2 | its height |
+| 6 | 2 | the top margin |
+| 8 | 2 | the bottom margin |
+| 10 | 2 | the left margin |
+| 12 | 2 | the right margin |
+| 14 | 64 | the header: its bytes (the text's set, `INFO`'s), ended by a 0 byte (63 at most) |
+| 78 | 64 | the footer, the same |
+
+The text's width is the paper's less the left and right margins, its
+height on a page the paper's less the top and bottom ones (Veranda
+Write: 80 pixels an inch, a pixel 18 twips; the text at least 3 inches
+wide and high, at most 6.6 inches wide: the screen's page). The header
+and the footer are in the top and bottom margins. A header or footer is
+one line: `centre`, `left|right` or `left|centre|right` (a `|` past the
+second is the text's own); `{page}`, `{pages}`, `{date}` and `{name}`
+become the page's number, the number of pages, the date it is printed or
+exported and the document's name (its file name without the extension);
+any other `{` is itself. A reader that finds the paper's size or the
+margins impossible uses A4 and margins of 2.5 cm (1 inch on Letter).
+
+**The pages**: a page holds the lines that fit in the text's height; a
+line that does not fit starts the next page (a line taller than a page
+has one of its own), and the line after a page break's paragraph always
+does (a page break's own line never moves to the next page for its
+height). Veranda Write's view, its page numbers and its PDF all count
+them so.
 
 A paragraph style (8 bytes; pixels at 80 an inch, as the text's width):
 
@@ -95,7 +130,7 @@ kind), so a program can walk the text backwards. Kinds:
 |---|---|---|
 | `$10` | 1.0 | character style: the characters after it, up to the next `$10` code, are in that style (an index into `STYL`) |
 | `$11` | 1.1 | paragraph style: the paragraph's style, an index into `PARA` (1 .. n - 1: style 0 needs no code). Only as the first bytes of a paragraph (the text's first, or straight after a CR), before any other code |
-| `$12` | 1.2 | a page break: argument 0. A paragraph of its own: `[$12 0 $12]` and the paragraph's CR, nothing else in the paragraph (no paragraph code). The next paragraph starts a new page (stage 3 makes pages; stage 2 draws a dashed line across the column there). A page break in a paragraph with anything else in it does nothing (Veranda Write takes it out when a deletion next to it, Backspace or Delete, joins its paragraph to another; text typed into its paragraph leaves it there, doing nothing, and hides the line). A 1.1 reader keeps it and shows an empty paragraph |
+| `$12` | 1.2 | a page break: argument 0. A paragraph of its own: `[$12 0 $12]` and the paragraph's CR, nothing else in the paragraph (no paragraph code). The next paragraph starts a new page (1.4's programs; Veranda Write 1.2-1.3 drew a dashed line across the column there and went on). A page break in a paragraph with anything else in it does nothing (Veranda Write takes it out when a deletion next to it, Backspace or Delete, joins its paragraph to another; text typed into its paragraph leaves it there, doing nothing, and hides the line). A 1.1 reader keeps it and shows an empty paragraph |
 | `$13` | (5) | an object: an index into `OBJS` (a table, a picture) |
 | `$14-$17` | | reserved |
 
@@ -136,13 +171,24 @@ DECISIONS W24-W28). The original is never written: Save writes a `.cwr`.
 "Hi **you**" and a paragraph end, centred, in Gate Sans 12:
 
 ```
-43 57 52 44 01 01 00 00                     CWRD 1.1 (1.2 writes 01 02, 1.3 01 03)
+43 57 52 44 01 01 00 00                     CWRD 1.1 (1.2 writes 01 02, 1.3 01 03, 1.4 01 04)
 49 4E 46 4F 08 00 00 00  00 00 00 00 08 02 00 00    INFO: cursor 0, width 520 (1.3: 08 02 01 00, ISO-8859-16)
 46 4F 4E 54 0B 00 00 00  01 09 "Gate Sans"          FONT: 1 font
 53 54 59 4C 09 00 00 00  02 00 0C 00 00 00 0C 01 00 STYL: 2 styles (plain, bold)
 50 41 52 41 11 00 00 00  02                         PARA: 2 paragraph styles:
                          00 00 00 00 00 00 00 02      Body
                          00 01 00 00 00 00 00 02      Body, centred
+                                            (1.4: PAGE 8E 00 00 00 and its 142 bytes here)
 54 45 58 54 0D 00 00 00  11 01 11 "Hi " 10 01 10 "you" 0D   TEXT: centred
 45 4E 44 20 00 00 00 00                     END
 ```
+
+## Older and newer programs
+
+A 1.4 file opens in a program of 1.0-1.3 (a minor version): it skips
+`PAGE`, so the document opens with that program's page (A4's 9.7 inches
+of text, 6.5 inches wide), its page breaks shown as lines or empty
+paragraphs; saving it there writes the older version without the page
+setup. A file of 1.0-1.3 opens in 1.4 with the user's default page
+setup (Veranda Write: File > Page setup, "For new documents"; A4 with 2.5
+cm margins until one is chosen).

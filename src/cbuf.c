@@ -136,6 +136,47 @@ unsigned char cb_byte(struct cbuf *c, pos_t at)
 #endif
 
 /*---------------------------------------------------------------
+  a cbuf made, emptied, its room (main RAM: overlay 11, cbufx.c's, has
+  no room left; W43)
+ ---------------------------------------------------------------*/
+void cb_initp(struct cbuf *c, unsigned char *bank, unsigned int *len, unsigned char pg, unsigned int max)
+{
+    memset(c, 0, sizeof *c);
+    c->bank = bank;
+    c->len = len;
+    c->max = max;
+    c->pg = pg;
+    if (pg)
+        wh_clear(pg);
+}
+
+void cb_init(struct cbuf *c, unsigned char *bank, unsigned int *len, unsigned int max)
+{
+    cb_initp(c, bank, len, 0, max);
+}
+
+unsigned char cb_room(struct cbuf *c, pos_t n)
+{
+    return c->n + (unsigned int)(n / BANK_SIZE) + 2 <= c->max;
+}
+
+void cb_clear(struct cbuf *c)
+{
+    BANK_SAVE();
+    TB_MAP();                           /* (the paged cbufs' tables: overlay 11's bank) */
+    while (c->n)
+        bk_put(c->bank[--c->n]);        /* (bank 0, a chunk on the card: nothing) */
+    BANK_RESTORE();
+    if (c->pg)
+        wh_clear(c->pg);
+    c->ci = 0;
+    c->cs = 0;
+    c->total = 0;
+}
+
+unsigned char cb_split;                 /* (cw.h: the typing; cbufx.c's cb_insert) */
+
+/*---------------------------------------------------------------
   bytes in banks, for cbufx.c
  ---------------------------------------------------------------*/
 void bm_move(unsigned char b, unsigned int to, unsigned int from, unsigned int n)

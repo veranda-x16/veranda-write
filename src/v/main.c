@@ -16,13 +16,24 @@
 #include <vrpath.h>
 #include "cwv.h"
 
-unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14;
+unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16, bank17;
 unsigned char cw_idle, follow;
 pos_t cur, anc;
 unsigned int goal_x = 0xFFFF;
 unsigned char ty_style, ty_kept, need_view, status_dirty;
 char status_msg[40];
 char docname[64];
+/* stage 3's (W44-W47): read and written by several overlays */
+struct pgset pgs;                       /* the page setup (page.c) */
+unsigned int pg_th;                     /* the text's height on a page (page.c) */
+unsigned char pp_on;                    /* the page setup panel is open (pgpanel.c) */
+unsigned char pdf_hfw;                  /* the PDF's header or footer (pdf.c, pdfhf.c) */
+unsigned int pdf_hfp, pdf_hfn;
+unsigned int pdf_pages, pdf_page;       /* the PDF (pdf.c, pgpanel.c) */
+unsigned long pdf_size;
+const char *pdf_title;
+unsigned char pdf_fh;                   /* its file (pdfx.c, pgpanel.c) */
+char pdf_name[64];                      /* its name (pgpanel.c: the dialog's) */
 
 void set_status(const char *s)
 {
@@ -230,9 +241,15 @@ int main(void)
     bank12 = r1L;
     LoadOverlay(13, 0);
     bank13 = r1L;
-#ifdef CW_TEST
     LoadOverlay(14, 0);
     bank14 = r1L;
+    LoadOverlay(15, 0);
+    bank15 = r1L;
+    LoadOverlay(16, 0);
+    bank16 = r1L;
+#ifdef CW_TEST
+    LoadOverlay(17, 0);
+    bank17 = r1L;
 #endif
     appBank = bank1;
     MAPBANK(bank1);

@@ -23,7 +23,7 @@ SDK=${SDK:-build/sdk}
 mkdir -p "$D"
 find "$D" -mindepth 1 -delete
 mkdir -p "$D/VERANDA/FONTS"
-cp "build/veranda/test/Veranda Write.cvt" "$D/AUTOSTART.cvt"
+cp "${APP:-build/veranda/test/Veranda Write.cvt}" "$D/AUTOSTART.cvt"
 cp "$SDK/bin/VERANDA.PRG" "$SDK/bin/VERANDA.SYS" "$D/"
 cp build/desk/SHELL.cvt "$D/"
 cp build/desk/SHELL.cvt "$D/VERANDA/"

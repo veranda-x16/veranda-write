@@ -12,7 +12,7 @@
 
 struct menu mbar = { 0, 14, 0, 0, HORIZONTAL | UN_CONSTRAINED | NBAR, {
     { "Veranda Write", DYN_SUB_MENU, m_dyn }, { "File", DYN_SUB_MENU, m_dyn }, { "Edit", DYN_SUB_MENU, m_dyn },
-    { "Text", DYN_SUB_MENU, m_dyn }, { "Style", DYN_SUB_MENU, m_dyn }, { "Format", DYN_SUB_MENU, m_dyn },
+    { "Insert", DYN_SUB_MENU, m_dyn }, { "Text", DYN_SUB_MENU, m_dyn }, { "Style", DYN_SUB_MENU, m_dyn }, { "Format", DYN_SUB_MENU, m_dyn },
     { "Font", DYN_SUB_MENU, m_dyn }, { "Size", DYN_SUB_MENU, m_dyn } } };
 struct menu msub;
 char itext[MI][36];
@@ -24,4 +24,4 @@ unsigned char sz_n, sz_list[10];
 unsigned char menu_choice;
 unsigned char t_arg;
 /* where each list's items start in tools.c's names and ui.c's routines */
-const unsigned char mfirst[7] = { 0, 2, 8, 18, 26, 33, 43 };
+const unsigned char mfirst[8] = { 0, 2, 10, 20, 23, 29, 36, 46 };

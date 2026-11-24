@@ -85,7 +85,7 @@ static unsigned char down(void)
     return !(mouseData & 0x80);
 }
 
-/* t_arg: the bar's menu (4 Style, 6 Font, 7 Size), r11: the field's left
+/* t_arg: the bar's menu (5 Style, 7 Font, 8 Size), r11: the field's left
    (a card), r12: its width; t_arg then the item chosen (0xFF: none) */
 void t_popup(void)
 {

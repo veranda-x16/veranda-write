@@ -24,8 +24,8 @@ def main():
         s = os.path.getsize('%s.%s' % (binp, n))
         print('overlay %s: %d bytes (%d free)' % (n, s, 8191 - s))
         bad |= s > 8191
-        if n == '14' and s > 2048:
-            print('overlay 14: over 2 KB: the session goes at $A800 in its bank (src/v/test.c)')
+        if n == '17' and s > 3072:
+            print('overlay 17: over 3 KB: the session goes at $AC00 in its bank (src/v/test.c)')
             bad = True
     if bad:
         sys.exit('sizes: too big')

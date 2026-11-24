@@ -28,6 +28,18 @@ unsigned char bk_free_n(void)
     return nfree;
 }
 
+/* bk_get would put nothing out to the card for a paged chunk: a bank in
+   the pool, or a run to take one from (W43: cbufx.c's split) */
+unsigned char bk_cheap(void)
+{
+    unsigned char i;
+    if (nfree)
+        return 1;
+    for (i = 0; i < NRUN && run_n[i]; ++i)
+        ;
+    return i < NRUN && (!bk_keep || plat_free() > bk_keep);
+}
+
 void FASTCALL bk_put(unsigned char b)
 {
     if (!b)

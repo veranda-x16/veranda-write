@@ -13,7 +13,7 @@
 .include "veranda.inc"
 .importzp ptr1
 
-.import _bank2, _bank4, _bank5, _bank6, _bank7, _bank8, _bank10, _bank11, _bank12, _bank13
+.import _bank2, _bank4, _bank5, _bank6, _bank7, _bank8, _bank10, _bank11, _bank12, _bank13, _bank14, _bank15
 
 .macro FAR name, target, bank
 .export name
@@ -36,6 +36,37 @@ fx:	.res 1
 _cw_jiffies:
 	jsr $FFDE
 	ldx #0
+	rts
+
+; keys waiting in the ROM's queue (kbdbuf_peek, $FEBD: x the count).
+; Veranda's main loop takes one key from it a pass (KeyPoll's GETIN) and
+; its own queue is empty again when the program has it, so pressFlag
+; alone says nothing of the keys still to come: the drawing waits for
+; these too (ui.c's tick, DECISIONS W43)
+.export _cw_keys
+_cw_keys:
+	jsr $FEBD
+	txa
+	ldx #0
+	rts
+
+; Esc waiting in the ROM's key queue (kbdbuf_peek: a the first key, x
+; the keys): taken (GETIN), 1; else 0. A long command's stop (the PDF:
+; pdfx.c, DECISIONS W47), the keys being the ROM's while the main loop
+; waits
+.export _cw_esc
+_cw_esc:
+	jsr $FEBD
+	cpx #0
+	beq @no
+	cmp #$1B
+	bne @no
+	jsr $FFE4
+	lda #1
+	ldx #0
+	rts
+@no:	lda #0
+	tax
 	rts
 
 far:	sta fa
@@ -121,7 +152,6 @@ FAR _walk, _e_walk, _bank5
 FAR _line_x, _e_line_x, _bank5
 FAR _line_hit, _e_line_hit, _bank5
 FAR _row_sel, _e_row_sel, _bank5
-FAR _v_pbreak, _e_v_pbreak, _bank5
 ; overlay 8: the font cache
 FAR _fc_load, _e_fc_load, _bank8
 FAR _fc_reset, _e_fc_reset, _bank8
@@ -145,14 +175,10 @@ FAR _pg_at, _e_pg_at, _bank13
 FAR _pg_idle, _e_pg_idle, _bank13
 FAR _pg_first, _e_pg_first, _bank13
 ; overlay 11: the chunked buffer's edits, the pager (cbufx.c, swap.c)
-FAR _cb_init, _e_cb_init, _bank11
-FAR _cb_initp, _e_cb_initp, _bank11
-FAR _cb_clear, _e_cb_clear, _bank11
 FAR _cb_insert, _e_cb_insert, _bank11
 FAR _cb_delete, _e_cb_delete, _bank11
 FAR _cb_write, _e_cb_write, _bank11
 FAR _cb_append, _e_cb_append, _bank11
-FAR _cb_room, _e_cb_room, _bank11
 FAR _sw_init, _e_sw_init, _bank11
 FAR _sw_in, _e_sw_in, _bank11
 FAR _sw_take, _e_sw_take, _bank11
@@ -179,3 +205,15 @@ FAR _sw_dopen, _e_sw_dopen, _bank12
 FAR _sw_dclose, _e_sw_dclose, _bank12
 ; overlay 2: the rest of a document being opened (files.c)
 FAR _ld_need, _e_ld_need, _bank2
+; overlay 14: the page setup (page.c), the rows, the bands, the header and
+; footer (pgview.c); 13: the view's pages; 15: the PDF (W44-W47)
+FAR _pgs_default, _e_pgs_default, _bank14
+FAR _pg_apply, _e_pg_apply, _bank14
+FAR _ld_safe, _e_ld_safe, _bank14
+FAR _rows_build, _e_rows_build, _bank14
+FAR _clear_below, _e_clear_below, _bank14
+FAR _v_band, _e_v_band, _bank14
+FAR _v_pbreak, _e_v_pbreak, _bank14
+FAR _f_pdf_hf, _e_pdf_hf, _bank14
+FAR _pg_view, _e_pg_view, _bank13
+FAR _pdf_write, _e_pdf_write, _bank15

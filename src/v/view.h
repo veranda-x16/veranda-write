@@ -6,20 +6,22 @@
 #include <vrwin.h>
 
 extern unsigned char dm_on;             /* (layout.c: the damage) */
-extern pos_t dm_lo, dm_hi;
+extern pos_t dm_lo, dm_hi, de_lo, de_hi;
 extern long dm_delta;
 
 extern const struct vrwin win;
 extern pos_t s_lo, s_hi;                /* the selection as drawn */
+extern unsigned int clr_y;              /* the paper from there down (view.c's clear_below) */
 extern unsigned char cur_on;
+extern unsigned int cy;                 /* (the cursor's top as drawn) */
 extern pos_t w_hit;
 extern int v_n;
 void __fastcall__ clip(unsigned char on);
-void rows_build(void);
+void rows_build(void);                  /* (pgview.c) */
 unsigned int __fastcall__ row_bot(unsigned char i);
 void row_sel(unsigned char i, pos_t lo, pos_t hi);
 void __fastcall__ draw_row(unsigned char i);
-void clear_below(void);
+void clear_below(void);                 /* (pgview.c) */
 unsigned int walk(pos_t p0, const struct line *l, unsigned char mode, pos_t t);
 
 /* view2.c (overlay 5) */

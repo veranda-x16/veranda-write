@@ -36,19 +36,6 @@ static void v_title_text(void)
     *p = 0;
 }
 
-/* row i has a page break's code (draw_row, through glue.s): a row of
-   its own paragraph (no characters) gets dashes across the column, a
-   little above its baseline */
-extern unsigned char pb_row;
-
-void __fastcall__ e_v_pbreak(unsigned char i)
-{
-    unsigned int y = vr[i].y + vr[i].l.a - 3;
-    pb_row = 0;
-    if (!vr[i].l.w && y >= TA_TOP && y <= TA_BOT)
-        WHorizontalLine(0xF0, TX0, TX0 + wrap_w - 1, y);
-}
-
 void v_title(void)
 {
     v_title_text();
@@ -58,6 +45,7 @@ void v_title(void)
 
 #pragma bss-name (push, "OVL5BSS")
 static struct vrow ov[VMAX];            /* (the rows before an edit: this overlay's) */
+static pos_t mo[VMAX];                  /* (their places now: moved()) */
 static unsigned char ovn;
 static unsigned char dirty[VMAX];
 #pragma bss-name (pop)
@@ -172,6 +160,7 @@ void v_all(void)
 {
     unsigned char i;
     view_cursor(0);
+    clr_y = 0xFFFF;
     clip(1);
     rows_build();
     s_lo = SEL_LO();
@@ -224,10 +213,11 @@ void v_scroll(void)
             return;
         }
         view_cursor(0);
-        dy = vr[n].y - TY0;
+        dy = vr[n].y - vr[n].g - TY0;
         clip(0);
         dispBufferOn = ST_WR_FORE | ST_WR_BACK;
         ScrollRect(PG_C0, PG_CW, TY0, TA_BOT, -(int)dy, 0);
+        clr_y = 0xFFFF;
         top_line += n;
         clip(1);
         rows_build();
@@ -242,12 +232,17 @@ void v_scroll(void)
         if (!m)
             return;
         dy = 0;
-        for (i = 1; i <= m; ++i) {
+        for (i = 1; i <= m && dy < TA_BOT - TA_TOP; ++i) {
             lt_get(top_line - i, &l);
             dy += l.h;
         }
+        top_line -= m;
         if (dy >= TA_BOT - TA_TOP - 16) {
-            top_line -= m;
+            v_all();
+            return;
+        }
+        rows_build();                   /* (the bands: the old top row is row m now) */
+        if (m >= vn || (dy = vr[m].y - vr[m].g - TY0) >= TA_BOT - TA_TOP - 16) {
             v_all();
             return;
         }
@@ -255,10 +250,9 @@ void v_scroll(void)
         clip(0);
         dispBufferOn = ST_WR_FORE | ST_WR_BACK;
         ScrollRect(PG_C0, PG_CW, TY0, TA_BOT, dy, 0);
-        top_line -= m;
+        clr_y = 0xFFFF;
         clip(1);
-        rows_build();
-        for (k = 0; k < vn && vr[k].y < TY0 + dy; ++k)
+        for (k = 0; k < vn && vr[k].y - vr[k].g < TY0 + dy; ++k)
             draw_row(k);
         if (vn)
             draw_row(vn - 1);           /* (cut at the bottom now) */
@@ -305,43 +299,78 @@ void v_fix_cursor(void)
     }
 }
 
-/* old place q (before the edits) where it is now; 0xFFFFFFFF: edited */
+/* old place q (before the edits) where it is now; 0xFFFFFFFF: edited
+   (de_lo .. de_hi: the bytes edited since the last drawing, W43) */
 static pos_t moved(pos_t q)
 {
-    if (q < dm_lo)
+    if (q < de_lo)
         return q;
-    if (q >= (pos_t)((long)dm_hi - dm_delta))
+    if (q >= (pos_t)((long)de_hi - dm_delta))
         return (pos_t)((long)q + dm_delta);
     return 0xFFFFFFFFUL;
 }
 
+/* old row j is new row i: its place moved (mo[j]), the same line (its
+   entry: its bytes, height, baseline, style, paragraph, width) and
+   number. A row's drawing is all its own: its text, its entry, its number
+   (W43) */
+static unsigned char __fastcall__ same(unsigned char j, unsigned char i)
+{
+    static struct vrow *a, *b;          /* (W45: an index a field cost a multiplication) */
+    a = &ov[j];
+    b = &vr[i];
+    return mo[j] == b->pos && !memcmp(&a->l, &b->l, sizeof(struct line)) && a->n == b->n
+           && a->g == b->g && (!b->g || a->pg == b->pg);
+}
+
+/* what the edits changed drawn again. dirty[i]: 1 row i drawn, 0 on the
+   screen as it is, 2 moved there by ScrollRect (drawn when it is cut at
+   the bottom now). A row is drawn again when its bytes were edited, a
+   selection was or is on it, or no old row was the same line; the old
+   row at the same y is left as it is (W43: so the line before the edit,
+   wrapped again as it was, the one after it and the one cut at the
+   bottom are not drawn again: 4 or 5 rows a key were 1 or 2); rows that
+   only moved go by ScrollRect, as many as moved by as much as the first */
 void v_refresh(void)
 {
     static unsigned char i, j, k, i0, j0, nmove;
     static int dmove;
+    static pos_t q, slo, shi;
     pos_t lo = SEL_LO(), hi = SEL_HI(), e;
     view_cursor(0);
     if (dm_on) {
         memcpy(ov, vr, sizeof vr);
         ovn = vn;
+        for (j = 0; j < ovn; ++j)
+            mo[j] = moved(ov[j].pos);
         rows_build();
         memset(dirty, 1, vn);
+        PM("rows");
         nmove = 0;
+        j = 0;
+        slo = lo < s_lo ? lo : s_lo;    /* (a selection there, before or now) */
+        shi = hi > s_hi ? hi : s_hi;
+        if (s_lo >= s_hi && lo >= hi)
+            shi = 0;
         for (i = 0; i < vn; ++i) {
             e = vr[i].pos + vr[i].l.len;
-            if (vr[i].pos <= dm_hi && e >= dm_lo)
+            if (vr[i].pos < de_hi && e > de_lo)
                 continue;               /* edited */
-            if ((s_lo < s_hi || lo < hi) && vr[i].pos < (hi > s_hi ? hi : s_hi) && e > (lo < s_lo ? lo : s_lo))
-                continue;               /* (a selection there, before or now) */
-            for (j = 0; j < ovn; ++j)
-                if (moved(ov[j].pos) == vr[i].pos && ov[j].l.len == vr[i].l.len && ov[j].l.h == vr[i].l.h
-                    && ov[j].l.a == vr[i].l.a && ov[j].l.s == vr[i].l.s && ov[j].l.f == vr[i].l.f
-                    && ov[j].n == vr[i].n)
-                    break;
-            if (j == ovn || ov[j].y + ov[j].l.h - 1 > TA_BOT)
-                continue;               /* (new on the screen, or cut before) */
+            if (vr[i].pos < shi && e > slo)
+                continue;
+            /* the old row now at its place: the old rows' places, moved,
+               only grow (the edited ones, 0xFFFFFFFF, are between those
+               before the edits and those after them), as the rows' do, so
+               one walk through them for all the rows (W43: a search
+               through all of them for each row took 0.14 s a key) */
+            while (j < ovn && ((q = mo[j]) == 0xFFFFFFFFUL || q < vr[i].pos))
+                ++j;
+            if (j == ovn || !same(j, i))
+                continue;               /* (new on the screen) */
             if (ov[j].y == vr[i].y)
-                dirty[i] = 0;
+                dirty[i] = 0;           /* (as it is, cut at the bottom or not) */
+            else if (ov[j].y + ov[j].l.h - 1 > TA_BOT)
+                continue;               /* (cut before: drawn) */
             else if (!nmove) {
                 nmove = 1;              /* the first row that only moved */
                 i0 = i;
@@ -354,35 +383,38 @@ void v_refresh(void)
             /* that row and the ones after it that moved as much: ScrollRect */
             for (k = i0; k < vn && dirty[k]; ++k) {
                 j = j0 + (k - i0);
-                if (j >= ovn || moved(ov[j].pos) != vr[k].pos || ov[j].l.len != vr[k].l.len || ov[j].l.h != vr[k].l.h
-                    || ov[j].l.a != vr[k].l.a || ov[j].l.s != vr[k].l.s || ov[j].l.f != vr[k].l.f || ov[j].n != vr[k].n
-                    || (int)vr[k].y - (int)ov[j].y != dmove || ov[j].y + ov[j].l.h - 1 > TA_BOT)
+                if (j >= ovn || !same(j, k) || (int)vr[k].y - (int)ov[j].y != dmove || ov[j].y + ov[j].l.h - 1 > TA_BOT)
                     break;
-                if (vr[k].pos <= dm_hi && vr[k].pos + vr[k].l.len >= dm_lo)
+                e = vr[k].pos + vr[k].l.len;
+                if ((vr[k].pos < de_hi && e > de_lo) || (vr[k].pos < shi && e > slo))
                     break;
-                dirty[k] = 0;
+                dirty[k] = 2;
             }
             for (; k < vn; ++k)
                 dirty[k] = 1;           /* (under the moved rows now) */
             for (k = 0; k < i0; ++k)
-                if (vr[k].y + vr[k].l.h > ov[j0].y)
+                if (vr[k].y + vr[k].l.h > ov[j0].y - ov[j0].g)
                     dirty[k] = 1;       /* (where the rows were) */
             dispBufferOn = ST_WR_FORE | ST_WR_BACK;
+            clr_y = 0xFFFF;
             if (dmove > 0)
-                ScrollRect(PG_C0, PG_CW, ov[j0].y, TA_BOT, dmove, 0);
+                ScrollRect(PG_C0, PG_CW, ov[j0].y - ov[j0].g, TA_BOT, dmove, 0);
             else
-                ScrollRect(PG_C0, PG_CW, vr[i0].y, TA_BOT, dmove, 0);
+                ScrollRect(PG_C0, PG_CW, vr[i0].y - vr[i0].g, TA_BOT, dmove, 0);
         }
         clip(1);
         s_lo = lo;
         s_hi = hi;
+        PM("cmp");
         for (i = 0; i < vn; ++i)
-            if (dirty[i] || vr[i].y + vr[i].l.h - 1 > TA_BOT)
-                draw_row(i);
+            if (dirty[i] == 1 || (dirty[i] == 2 && vr[i].y + vr[i].l.h - 1 > TA_BOT))
+                { draw_row(i); PM("row"); }
         clear_below();
         clip(0);
         dm_on = 0;
+        PM("clr");
         scrollbar();
+        PM("sbar");
     } else if (lo != s_lo || hi != s_hi) {
         /* the selection alone: the difference inverted, both screens */
         clip(1);
@@ -407,8 +439,8 @@ void v_refresh(void)
         follow = 0;
         v_fix_cursor();
     }
-    if (status_dirty)
-        view_status();
-    view_cursor(1);
+    PM("fix");
+    view_cursor(1);                     /* (the status bar after it: ui.c's tick, W43) */
+    PM("cur");
 }
 

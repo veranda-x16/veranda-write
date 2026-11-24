@@ -9,9 +9,12 @@ usage: cwrd.py dump <file.cwr>            the text with its styles
 As a module: read(path) -> Doc (chars(): a list of (character, font
 name, size, flags); paras(): each paragraph's style, a tuple of PARA's 8
 bytes: kind, align, left, right, first (signed), before, after,
-spacing; charset: INFO's byte 6, 1.3, W38: 0 Latin-1, 1 ISO-8859-16),
-write(path, chars, paras=None, minor=1: the text's bytes as they are; minor
-3 marks them ISO-8859-16), text(doc) (the characters as a str, decoded by
+spacing; charset: INFO's byte 6, 1.3, W38: 0 Latin-1, 1 ISO-8859-16;
+page: 1.4's PAGE, W44, a dict, None without it; pbreaks(): the page
+breaks), write(path, chars, paras=None, minor=1: the text's bytes as they
+are; minor 3 marks them ISO-8859-16; breaks: the characters a page break
+comes before, each the CR of an empty Body paragraph; page: a PAGE dict,
+minor 4), text(doc) (the characters as a str, decoded by
 the file's set), doc_sum(chars) and
 par_sum(paras) (the sums the test build logs: src/v/test.c).
 
@@ -19,7 +22,9 @@ Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE)."""
 import struct
 import sys
 
-K_FIRST, K_LAST, K_CS, K_PS = 0x10, 0x17, 0x10, 0x11
+K_FIRST, K_LAST, K_CS, K_PS, K_PB = 0x10, 0x17, 0x10, 0x11, 0x12
+PAGE_FMT = '<BBHHHHHH64s64s'            # (1.4: the PAGE chunk, 142 bytes)
+PAGE_KEYS = ('paper', 'flags', 'w', 'h', 'top', 'bottom', 'left', 'right', 'head', 'foot')
 CR = 0x0D
 # the named paragraph styles (src/text.c's named[]): kind, align, left,
 # right, first, before, after, spacing
@@ -43,6 +48,18 @@ class Doc:
         self.version = (1, 0)
         self.chunks = []
         self.pstyles = [BODY]
+        self.page = None
+
+    def pbreaks(self):
+        """the page breaks: [$12 0 $12] codes"""
+        t, i, n = self.text, 0, 0
+        while i < len(t):
+            if K_FIRST <= t[i] <= K_LAST:
+                n += t[i] == K_PB
+                i += 3
+            else:
+                i += 1
+        return n
 
     def chars(self):
         """the characters with their styles: (c, font name, size, flags)"""
@@ -128,6 +145,11 @@ def read(path):
             for j in range(n):
                 e = body[1 + k * j:9 + k * j]
                 d.pstyles.append(tuple(e[:4]) + (e[4] - 256 if e[4] > 127 else e[4],) + tuple(e[5:8]))
+        elif tag == b'PAGE' and n >= struct.calcsize(PAGE_FMT):
+            v = struct.unpack(PAGE_FMT, body[:struct.calcsize(PAGE_FMT)])
+            d.page = dict(zip(PAGE_KEYS, v))
+            for k in ('head', 'foot'):
+                d.page[k] = d.page[k].split(b'\0')[0].decode('iso8859_16')
         elif tag == b'TEXT':
             d.text = body
     if not seen_end:
@@ -148,7 +170,7 @@ def text(d):
     return ''.join(out)
 
 
-def write(path, chars, fonts=None, paras=None, minor=1):
+def write(path, chars, fonts=None, paras=None, minor=1, breaks=(), page=None):
     """a document of chars ((c, font, size, flags)...), a style code
     wherever the style changes; paras: each paragraph's style (a code at
     the start of each that is not Body); minor 0: a 1.0 file (no PARA)"""
@@ -181,7 +203,9 @@ def write(path, chars, fonts=None, paras=None, minor=1):
         if np < len(paras) and paras[np] != BODY:
             text.extend(bytes([K_PS, pst.index(paras[np]), K_PS]))
     pcode()
-    for c, f, z, g in chars:
+    for i, (c, f, z, g) in enumerate(chars):
+        if i in breaks:
+            text += bytes([K_PB, 0, K_PB])
         k = styles.index((fonts.index(f), z, g, 0))
         if k != cur:
             text += bytes([K_CS, k, K_CS])
@@ -204,6 +228,10 @@ def write(path, chars, fonts=None, paras=None, minor=1):
     if minor:
         chunk(b'PARA', bytes([len(pst)]) + b''.join(bytes(p[:4]) + bytes([p[4] & 255]) + bytes(p[5:])
                                                     for p in pst))
+    if page:
+        v = [page[k] for k in PAGE_KEYS]
+        v[8:] = [x.encode('iso8859_16') for x in v[8:]]
+        chunk(b'PAGE', struct.pack(PAGE_FMT, *v))
     chunk(b'TEXT', bytes(text))
     chunk(b'END ', b'')
     open(path, 'wb').write(out)

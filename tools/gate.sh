@@ -1,5 +1,5 @@
 #!/bin/bash
-# Veranda Write's gate: stage 2.
+# Veranda Write's gate: stage 3 (stage 2's, and pages and PDF).
 #
 #   tools/gate.sh [SDK=<Veranda's installed SDK>] [SD=0: no SD card run]
 #
@@ -28,7 +28,15 @@
 #    (W41) a styled run at the end deleted with Backspace held (the
 #    keyboard's repeat), Delete and Cut, the cursor inside the text after;
 #    a big document opened, edited, searched, replaced in, saved, a burst
-#    of keys; tools/check.py: the states (characters, styles, paragraphs)
+#    of keys; (W43) the per-key timings, tools/speed.sh;
+#    (stage 3, W44-W48: SESSION=page, under R49 at 512 KB, on the host
+#    folder and on an SD card image) page breaks typed, the header and
+#    footer, the page setup, saved as 1.4 and opened again, exported as
+#    PDF (Polish in it), 1.1-1.3 documents opened, a big document's pages
+#    and its PDF (timed), an export stopped by Esc, Go to page against the
+#    PDF's page (tools/check.py, tools/check_pdf.py: qpdf, pdfinfo,
+#    pdftotext);
+#    tools/check.py: the states (characters, styles, paragraphs)
 #    and the files against the script's model; the timings
 # 4. screenshots: the session stopped at points (build/gate/*.png; the
 #    styled page, the find panel, Word count also in build/shots)
@@ -64,7 +72,7 @@ for f in "Gate Sans" "Gate Mono"; do        # (W38: with $A0-$FF; Veranda's own 
 	$PY tools/hifont.py "build/fonts/$f.cvt" "build/fonts/$f.cvt" || fail "tools/hifont.py: $f"
 done
 make -s test > "$OUT/unit.log" 2>&1 || { tail "$OUT/unit.log"; fail "make test"; }
-ok "unit tests: $(tail -1 "$OUT/unit.log")"
+ok "unit tests: $(grep 'checks, ' "$OUT/unit.log" | tail -1); $(grep -c '^pdf ' "$OUT/unit.log") PDFs (tools/check_pdf.py)"
 
 make -s veranda SDK="$SDK" > "$OUT/build.log" 2>&1 || { tail "$OUT/build.log"; fail "make veranda"; }
 make -s veranda-test SDK="$SDK" > "$OUT/build-test.log" 2>&1 || { tail "$OUT/build-test.log"; fail "make veranda-test"; }
@@ -126,6 +134,60 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 	chk "$S/out" || fail "the session (SD card, R49)"
 	ok "the same on an SD card image under R49"
 fi
+# stage 3 (W44-W48): pages, the header and footer, the page setup, PDF
+# (tools/script.py's session_page: SESSION=page) on a host folder under
+# R49 at 512 KB, its screenshots, then on an SD card image under R49
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=page RAM=512
+	TIMEOUT=900 tools/run.sh "$OUT/page" "" "$R49" > /dev/null || fail "the page session (host folder)"
+	echo "== pages and PDF (host folder, R49, 512 KB)"
+	chk "$OUT/page" || fail "the page session (host folder)"
+	ok "pages, the header and footer, the page setup, CWRD 1.4, PDF"
+	PSHOTS="pbreak hfpanel bands setup pdfdlg old goto bigpages"
+	for s in $PSHOTS; do
+		TIMEOUT=900 tools/run.sh "$OUT/pshot-$s" "$s" "$R49" > "$OUT/pshot-$s.log" 2>&1 &
+	done
+	wait
+	for s in $PSHOTS; do
+		[ -f "$OUT/pshot-$s/dump.bin" ] || { tail -3 "$OUT/pshot-$s.log"; fail "the page session stopped at $s"; }
+		$PY tools/check.py "$OUT/pshot-$s" --partial > /dev/null || fail "the page session stopped at $s: its states"
+		$PY "$SDK/tools/vram2png.py" --color "$OUT/pshot-$s/dump.bin" "$OUT/$s.png" 2>/dev/null || true
+		cp "$OUT/$s.png" build/shots/ 2>/dev/null || true
+	done
+	ok "screenshots: $OUT/{$(echo $PSHOTS | tr ' ' ,)}.png; build/shots/"
+	S=$OUT/sdpage
+	tools/run.sh "$S/card" "" "$R49" --prepare > /dev/null || fail "the SD card's files (page)"
+	mkdir -p "$S/out"
+	cp "$S/card/expect.json" "$S/card/XBIG.cwr" "$S/out/"
+	$PY "$SDK/tools/vcard.py" make --mb 64 "$S/sd.img" "$S/card" >/dev/null || fail "vcard make"
+	cp "$SDK/bin/VERANDA.PRG" "$S/"
+	(cd "$S" && SDL_VIDEODRIVER=dummy timeout -s INT 900 "$EMU" -rom "$R49" -sdcard sd.img -prg VERANDA.PRG \
+		-run -warp -sound none -echo -dump V -ram 512 > out/console.txt 2>&1) || true
+	[ -f "$S/dump.bin" ] || { tail -c 300 "$S/out/console.txt"; fail "SD card, page: the session did not finish"; }
+	mkdir -p "$S/out/DOCUMENTS"
+	for f in Pages.cwr DOCUMENTS/Pages.pdf DOCUMENTS/XBIG.pdf; do
+		$PY "$SDK/tools/vcard.py" get "$S/sd.img" "$f" "$S/out/$f" >/dev/null || fail "SD card, page: no $f"
+	done
+	$PY "$SDK/tools/vcard.py" get "$S/sd.img" DOCUMENTS/Stop.pdf "$S/out/Stop.pdf" >/dev/null 2>&1 \
+		&& fail "SD card, page: the stopped export's Stop.pdf left on the card"
+	echo "== pages and PDF on an SD card image (R49, 512 KB)"
+	chk "$S/out" || fail "the page session (SD card, R49)"
+	ok "the same on an SD card image under R49"
+	unset SESSION RAM
+fi
+# the per-key timings (W43; tools/speed.sh: SESSION=speed, a host folder
+# under R49 at 512 KB): typing at a document's end, in a long paragraph,
+# in styles, Backspace, Return, one-line paragraphs, a 400 KB document;
+# 60 keys at 30 a second, 8 at once: none lost (60 a second and the big
+# document's 30: counted, not checked)
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	echo "== the per-key timings (host folder, R49, 512 KB)"
+	r=0
+	OUT=$OUT/speed tools/speed.sh > "$OUT/speed.txt" 2>&1 || r=$?
+	sed 's/^/      /' "$OUT/speed.txt" | grep -v "^      state\|^      swap\|^      time\|^      mark"
+	[ $r = 0 ] || fail "the per-key timings: a key lost, or a state wrong"
+	ok "the per-key timings: no key lost at 30 a second"
+fi
 # a document larger than RAM (SESSION=big: tools/script.py's session_big,
 # BIGDOC bytes, 1,000,000 by default) on an SD card image under R49, at
 # 512 KB and at 2 MB of RAM banks: opened, the end, the start, Go to page,
@@ -159,4 +221,4 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 		ok "the big document at $R KB (the original untouched, a stale swap removed)"
 	done
 fi
-echo "GATE stage 2 + geoWrite + big documents + Polish: PASS"
+echo "GATE stage 3 (pages, headers and footers, PDF) + stage 2 + geoWrite + big documents + Polish: PASS"

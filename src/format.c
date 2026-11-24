@@ -5,7 +5,9 @@
    the chunks it does not know, so a later minor version adds chunks (the
    paragraph styles, the page, objects) that this one passes over; a
    later major version is refused. Version 1.0: INFO, FONT, STYL, TEXT,
-   END; 1.1 adds PARA (the paragraph styles) before TEXT; 1.3 the text's
+   END; 1.1 adds PARA (the paragraph styles) before TEXT; 1.4 PAGE (the
+   page setup: the paper, the margins, the header and footer; a file
+   without it has the user's default, page.c) before TEXT; 1.3 the text's
    set in INFO (byte 6: 0 Latin-1, older files; 1 ISO-8859-16, Veranda's
    set, V135: what this version writes; a Latin-1 text is converted as it
    is read, the letters the set lacks made '?' and counted). The text is the
@@ -123,7 +125,7 @@ unsigned char fmt_save(cw_wfn w0, pos_t cursor)
     if (chunk("STYL", 1 + 4 * (pos_t)nsty) || w(&nsty, 1) || w(sty, 4 * nsty))
         return FE_IO;
     if (chunk("PARA", 1 + sizeof(struct pstyle) * (pos_t)npar) || w(&npar, 1)
-        || w(par, sizeof(struct pstyle) * npar))
+        || w(par, sizeof(struct pstyle) * npar) || chunk("PAGE", PGS_N) || w(&pgs, PGS_N))
         return FE_IO;
     if (chunk("TEXT", tx.total))
         return FE_IO;
@@ -498,6 +500,11 @@ unsigned char fmt_begin(cw_rfn r)
             }
             if (skip(len - (pos_t)l * n))
                 return FE_IO;
+        } else if (!memcmp(h, "PAGE", 4) && len >= PGS_N) {
+            /* (1.4) the page setup; a later version's longer: its first bytes */
+            if (rd(&pgs, PGS_N) || skip(len - PGS_N))
+                return FE_IO;
+            pg_apply();
         } else if (!memcmp(h, "TEXT", 4)) {
             if (!have_sty)
                 return FE_BAD;
@@ -573,24 +580,6 @@ unsigned char fmt_step(cw_rfn r, pos_t n)
         if (ld_kind == LD_CWRD && (e = finish()) != 0)
             return e;
         done();
-    }
-    return 0;
-}
-
-/* an edit up to p is safe while the rest is still to come: a paragraph
-   ends after p before the last line there is (the rest cannot change
-   it, nor it the rest) */
-unsigned char FASTCALL ld_safe(pos_t p)
-{
-    static unsigned int i, k;
-    static struct line l;
-    if (p == 0xFFFFFFFFUL || p >= tx.total)
-        return 0;
-    lt_find(p);
-    for (i = lf_i, k = 0; i + 1 < lt_n && k < 200; ++i, ++k) {
-        lt_get(i, &l);
-        if (l.f & LF_PARA)
-            return 1;
     }
     return 0;
 }

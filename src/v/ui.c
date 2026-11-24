@@ -123,11 +123,15 @@ static void type(unsigned char c)
         }
     }
     ul_step(U_TYPE, cur, anc);
+    PM("ul");
     if (HAS_SEL()) {
         ty_style = style_typing(SEL_LO());
         del_sel();
     }
+    cb_split = 1;                       /* (W43: a long tail in its chunk split off, not moved) */
     cur = anc = doc_insert(cur, &c, 1, ty_style);
+    cb_split = 0;
+    PM("ins");
     if (c == CH_CR) {
         ul_break();
         if (IS_HEAD(k) && !par_at(par_start(cur))) {
@@ -300,7 +304,7 @@ static void pick_size(unsigned char i)
 void m_about(void)
 {
     GotoFirstMenu();
-    message("Veranda Write 0.2 (stage 2): a word processor.", "MIT licence, (c) 2026 Marcin Spoczynski");
+    message("Veranda Write 0.3 (stage 3): a word processor.", "MIT licence, (c) 2026 Marcin Spoczynski");
 }
 
 static void __fastcall__ set_named(unsigned char k)
@@ -315,12 +319,14 @@ static void __fastcall__ fmt_par(unsigned char i)
     CALL9(t_format);
 }
 
-static void later(void)
-{
-    set_status("Not yet");
-}
 
 static void m_find(void) { GotoFirstMenu(); t_arg = 0; CALL9(fp_open); }
+/* stage 3 (W44-W48): the page setup and the header and footer (a panel),
+   a page break, PDF */
+static void m_pagesetup(void) { GotoFirstMenu(); t_arg = 0; callb(bank16, pp_open); }
+static void m_headfoot(void) { GotoFirstMenu(); t_arg = 5; callb(bank16, pp_open); }
+static void m_pbreak(void) { GotoFirstMenu(); callb(bank14, t_pbreak); }
+static void m_pdf(void) { GotoFirstMenu(); callb(bank16, t_pdf); }
 static void m_replace(void) { GotoFirstMenu(); t_arg = 1; CALL9(fp_open); }
 static void m_findnext(void) { GotoFirstMenu(); CALL9(fp_next); }
 static void m_count(void) { GotoFirstMenu(); CALL9(t_count); }
@@ -329,11 +335,12 @@ static void m_date(void) { GotoFirstMenu(); CALL9(t_date); }
 
 /* the menus: a list made when its bar item opens (tools.c), each item's
    routine this one, with the item */
-static void (*const acts[26])(void) = {
+static void (*const acts[29])(void) = {
     m_about, m_count,
-    c_new, c_open, c_save, c_saveas, c_close, c_quit,
+    c_new, c_open, c_save, c_saveas, m_pagesetup, m_pdf, c_close, c_quit,
     m_undo, m_redo, m_cut, m_copy, m_paste, m_selall, m_find, m_findnext, m_replace, m_goto,
-    m_plain, m_bold, m_italic, m_uline, m_larger, m_smaller, m_date, later,
+    m_pbreak, m_date, m_headfoot,
+    m_plain, m_bold, m_italic, m_uline, m_larger, m_smaller,
 };
 
 void __fastcall__ m_dyn(unsigned char bar)
@@ -347,10 +354,10 @@ void __fastcall__ m_item(unsigned char i)
 {
     GotoFirstMenu();
     switch (menu_bar) {
-    case 4: set_named(i); return;
-    case 5: fmt_par(i); return;
-    case 6: pick_font(i); return;
-    case 7: pick_size(i); return;
+    case 5: set_named(i); return;
+    case 6: fmt_par(i); return;
+    case 7: pick_font(i); return;
+    case 8: pick_size(i); return;
     }
     acts[mfirst[menu_bar] + i]();
 }
@@ -384,6 +391,8 @@ static void letter(unsigned char c, unsigned char sh)
     case 'f': m_find(); break;
     case 'g': if (sh) m_goto(); else m_findnext(); break;
     case 'd': if (sh) m_date(); break;
+    case 'm': m_pbreak(); break;        /* (Ctrl+Return: Ctrl+M's code) */
+    case 'p': if (sh) m_pdf(); break;
     case 'b': m_bold(); break;
     case 'i': m_italic(); break;
     case 'u': m_uline(); break;
@@ -397,6 +406,7 @@ static void letter(unsigned char c, unsigned char sh)
 static void key(void)
 {
     unsigned char k = keyData, m = keyDataMods, sh = m & 1, ctrl = m & 2;
+    PM("k<");
     sw_ulin();                          /* (back from being put aside: the undo log's banks) */
     if (status_msg[0]) {
         status_msg[0] = 0;
@@ -405,6 +415,10 @@ static void key(void)
 #ifdef CW_TEST
     test_key(k);
 #endif
+    if (pp_on) {
+        callb(bank16, pp_key);          /* (the page setup panel: every key its own) */
+        return;
+    }
     if (fp_on) {
         CALL9(fp_key);                  /* (the find panel's typing) */
         if (t_arg)
@@ -503,6 +517,7 @@ static void key(void)
     }
     if ((k >= 32 && k < 127) || k >= 160)
         type(k);
+    PM("key");
 }
 
 /*---------------------------------------------------------------
@@ -553,6 +568,12 @@ static void press(void)
         return;
     }
     mouse_xy(&x, &y);
+    if (pp_on) {
+        r11 = x;                        /* (the page setup panel: the pointer its own) */
+        r12 = y;
+        callb(bank16, pp_press);
+        return;
+    }
     if (fp_on && y >= FP_Y && y <= TA_END && x >= PG_L && x <= PG_R) {
         r11 = x;
         r12 = y;
@@ -584,11 +605,11 @@ static void press(void)
         } else if (x >= TB_INDENT && x < TB_INDENT + 32)
             fmt_par(x < TB_INDENT + 16 ? 5 : 4);
         else if (x >= TB_FONT && x < TB_FONT + TB_FONTW)
-            popup(6, TB_FONT, TB_FONTW);
+            popup(7, TB_FONT, TB_FONTW);
         else if (x >= TB_SIZE && x < TB_SIZE + TB_SIZEW)
-            popup(7, TB_SIZE, TB_SIZEW);
+            popup(8, TB_SIZE, TB_SIZEW);
         else if (x >= TB_NAME && x < TB_NAME + TB_NAMEW)
-            popup(4, TB_NAME, TB_NAMEW);
+            popup(5, TB_NAME, TB_NAMEW);
     } else if (x >= SB_X && y >= TA_TOP && y <= TA_END) {
         /* the scroll bar: the arrows three lines, the track a screen */
         if (y <= SB_UP)
@@ -636,6 +657,7 @@ static void drag(void)
   the main loop
  ---------------------------------------------------------------*/
 static unsigned char pg_more = 1;
+static unsigned char pend, pend_at;     /* keys not drawn yet: since cw_jiffies pend_at */
 
 static void tick(void)
 {
@@ -654,24 +676,48 @@ static void tick(void)
     }
     mouse_xy(&x, &y);
     SetPointer(y >= TA_TOP && y <= TA_BOT && x >= PG_L && x <= PG_R ? PTR_IBEAM : PTR_ARROW);
-    if (pressFlag & SET_KEYPRESS) {
+    if ((pressFlag & SET_KEYPRESS) || cw_keys()) {
+        /* draw once the keys waiting are in (W43: the ROM's too, which
+           the kernel takes one a pass), or when the first of them came
+           12 frames ago: typing faster than the drawing keeps up still
+           shows on the screen, 5 times a second */
         cw_idle = 0;
-        return;                         /* draw once the keys waiting are in */
-    }
+        if (!pend) {
+            pend = 1;
+            pend_at = cw_jiffies();
+        }
+        if (!need_view || (unsigned char)(cw_jiffies() - pend_at) < 12)
+            return;
+    } else
+        pend = 0;
     if (need_view) {
+        pend = 0;
         /* (cw_idle: the main loop found nothing to do since the gate's
            player last looked; cleared only when there is work, so a
            frame that lands in the middle of an idle pass counts) */
         cw_idle = 0;
         need_view = 0;
+        PM("t<");
         view_toolbar();
+        PM("tbar");
         view_refresh();
+        PM("ref");
         if (ld_shown) {
             ld_shown = 0;
             MARK("shown");              /* (the first screen of a document opened) */
         }
 #ifdef CW_TEST
         test_drawn();
+#endif
+        return;
+    }
+    if (status_dirty) {
+        /* the status bar in a pass of its own, after the text and the
+           cursor, when no key is waiting (W43: 0.03 s a key) */
+        cw_idle = 0;
+        view_status();
+#ifdef CW_TEST
+        test_status();
 #endif
         return;
     }
@@ -704,6 +750,7 @@ void __fastcall__ ui_main(unsigned char opts)
     sw_init();                          /* the paged cbufs (the text, the line table) */
     bk_keep = 2;                        /* (banks left to Veranda: accessories, the kernel) */
     ul_init();
+    callb(bank14, pg_loaddef);          /* (the user's page setup for new documents, W44) */
     doc_new();
     ty_style = 0;
     CALL8(menus_layout);

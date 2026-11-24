@@ -19,7 +19,9 @@
 
    The damage (dm_lo .. dm_hi, places in the text as it is now) is what
    the view must draw again: the bytes edited and the lines wrapped again
-   since the view last looked (the view clears dm_on).
+   since the view last looked (the view clears dm_on); de_lo .. de_hi the
+   bytes edited alone (the view: a line wrapped again as it was, outside
+   them, is not drawn again; W43).
 
    This file is the line table itself (main RAM on the X16); layfix.c
    wraps (overlay 4).
@@ -41,7 +43,7 @@ int lay_shift;
 void (*lay_busy)(void);
 
 unsigned char dm_on;
-pos_t dm_lo, dm_hi;
+pos_t dm_lo, dm_hi, de_lo, de_hi;
 long dm_delta;
 
 unsigned int an_i;               /* the anchor: a line, its start */
@@ -50,18 +52,22 @@ unsigned int ae_i;               /* the last edit's */
 pos_t ae_pos;
 
 unsigned char dirty;             /* the edits since lay_fix */
+pos_t sa_pos;                    /* style_at's last answer (styles.c): its place, */
+unsigned char sa_s, sa_ok;       /* the style; 0: none (the text changed since) */
 pos_t d_lo, d_hi;                /* their place, now */
 long d_delta;                    /* bytes inserted - deleted */
 
 /* a window of LW entries in main RAM: walking the table (finding a
    line, the pages) reads it a window at a time, not an entry; layfix.c
    empties it (lw_n = 0) whenever it changes the table */
-#define LW 32
-static unsigned char lw[LW * LT_SZ];
-static unsigned int lw_i;               /* the first entry there */
+#define LW 32                           /* (v/ltab.s too) */
+unsigned char lw[LW * LT_SZ];
+unsigned int lw_i;                      /* the first entry there */
 unsigned char lw_n;                     /* entries there (0: none) */
 
-static unsigned char *entry(unsigned int i)
+/* line i's entry (the X16: v/ltab.s's lt_get and lt_len_of look in the
+   window themselves, and call this when i is not there, W43) */
+unsigned char *FASTCALL lw_at(unsigned int i)
 {
     unsigned int k;
     if (i < lw_i || i >= lw_i + lw_n) {
@@ -78,17 +84,20 @@ static unsigned char *entry(unsigned int i)
     return lw + (unsigned char)(i - lw_i) * LT_SZ;
 }
 
+#define entry lw_at
+#ifdef CW_HOST
 void FASTCALL lt_get(unsigned int i, struct line *l)
 {
     unsigned char *e = entry(i);
     l->len = e[0] | (unsigned int)(e[1] & 7) << 8;
-    l->f = (e[1] >> 3) & 3;
-    l->w = e[2] | (unsigned int)(e[1] >> 5) << 8;
+    l->f = ((e[1] >> 3) & 3) | (e[1] & 0x80 ? LF_PB : 0);
+    l->w = e[2] | (unsigned int)((e[1] >> 5) & 3) << 8;
     l->h = e[3];
     l->a = e[4];
     l->s = e[5];
     l->p = e[6];
 }
+#endif
 
 unsigned int FASTCALL par_number(unsigned int i)
 {
@@ -178,11 +187,13 @@ void FASTCALL line_geom(const struct line *l, pos_t p)
     lg_rem = k % n;
 }
 
+#ifdef CW_HOST
 unsigned int FASTCALL lt_len_of(unsigned int i)
 {
     unsigned char *e = entry(i);
     return e[0] | (unsigned int)(e[1] & 7) << 8;
 }
+#endif
 
 /* the anchor to walk from (ak, as: a line, its start): the nearest to p
    of the last line found, the last edit's (ae: lay_fix's, so that the
@@ -289,6 +300,7 @@ static void region(pos_t *lo, pos_t *hi, pos_t p, pos_t n1, pos_t n0)
 
 void lay_dirty(pos_t p, pos_t n1, pos_t n0)
 {
+    sa_ok = 0;
     if (!dirty) {
         dirty = 1;
         d_lo = p;
@@ -300,11 +312,13 @@ void lay_dirty(pos_t p, pos_t n1, pos_t n0)
     }
     if (!dm_on) {
         dm_on = 1;
-        dm_lo = p;
-        dm_hi = p + n1;
+        dm_lo = de_lo = p;
+        dm_hi = de_hi = p + n1;
         dm_delta = 0;
-    } else
+    } else {
         region(&dm_lo, &dm_hi, p, n1, n0);
+        region(&de_lo, &de_hi, p, n1, n0);
+    }
     dm_delta += (long)n1 - (long)n0;
 }
 

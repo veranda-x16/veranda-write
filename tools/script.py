@@ -43,6 +43,8 @@ NM_FLAGS = [0, 1, 1, 1, 2, 0, 0]
 PF_ALIGN, PF_INDENT, PF_SPACING, PF_AFTER = 1, 2, 3, 4
 TB_Y, TB_ALIGN, TB_LIST, TB_INDENT, TB_NAME = 32, 240, 320, 368, 416   # the toolbar (src/v/cwv.h)
 YES_BUTTON = (255, 271)                 # a Yes/No box's Yes (the default box, centred)
+# the menu bar (src/v/menus.c, stage 3: Insert after Edit)
+APPM, FILEM, EDIT, INSERT, TEXT, STYLE, FORMAT, FONT, SIZE = range(9)
 
 
 def is_head(k):
@@ -139,6 +141,26 @@ class Model:
                 f, z, g = self.ty            # a heading's end: Body's characters next
                 self.ty = (f, 12, g & ~NM_FLAGS[ps[0]])
                 self.kept = True
+        self.mod = True
+
+    def pbreak(self):
+        """Insert > Page break (pgview.c's t_pbreak): a Return first
+        inside a paragraph, then a page break's paragraph (an empty Body
+        one, its CR in the style before it) before the cursor's"""
+        self.snap()
+        a = self.sel()[0]
+        q = self.par_of(a)
+        pa, _ = self.par_range(q)
+        if a != pa:
+            self.ty = self.typing_style(a)
+            self.type('\r', step=False)
+            a = self.cur
+            q += 1
+        st = self.c[a - 1][1:] if a else (SANS, 12, 0)
+        self.c.insert(a, (cwrd.CR,) + st)
+        self.p.insert(q, BODY)
+        self.cur = self.anc = a + 1
+        self.moved()
         self.mod = True
 
     def named(self, k):
@@ -288,9 +310,12 @@ class Model:
         self.mod = True
         return n
 
-    def state(self, name):
-        return {'chars': len(self.c), 'sum': cwrd.doc_sum(self.c), 'psum': cwrd.par_sum(self.p),
-                'modified': int(self.mod), 'name': name}
+    def state(self, name, pages=None):
+        st = {'chars': len(self.c), 'sum': cwrd.doc_sum(self.c), 'psum': cwrd.par_sum(self.p),
+              'modified': int(self.mod), 'name': name}
+        if pages:
+            st['pages'] = pages
+        return st
 
 
 class Script:
@@ -531,10 +556,10 @@ def session(run):
     s.K(ord('e'), CTRL | SHIFT)                 # Smaller: 12
     m.larger(-1)
     typ('\r')
-    s.menu(6, 1)                                # Font > Gate Mono
+    s.menu(FONT, 1)                             # Font > Gate Mono
     m.fmt(lambda st: (MONO, st[1], st[2]))
     typ('Gate Mono, for code.\r')
-    s.menu(6, 2)                                # Font > Gate Sans
+    s.menu(FONT, 2)                             # Font > Gate Sans
     m.fmt(lambda st: (SANS, st[1], st[2]))
     typ('Back to Gate Sans; the end of the first page of tests.')
     s.L(1, m.state(''))
@@ -628,12 +653,12 @@ def session(run):
     def typ(t):
         s.T(t)
         m.type(t, step=True)
-    s.menu(4, 1)                                # Style > Heading 1
+    s.menu(STYLE, 1)                            # Style > Heading 1
     m.named(1)
     typ('Veranda Write\r')                      # (Return at a heading's end: Body)
     typ('A word processor for the Commander X16, with paragraph styles: headings, lists, '
         'quotations, alignment and spacing.\r')
-    s.menu(4, 2)                                # Heading 2
+    s.menu(STYLE, 2)                            # Heading 2
     m.named(2)
     typ('Lists\r')
     s.click(TB_LIST + 9, TB_Y + 7)              # the toolbar: a bulleted list
@@ -648,15 +673,15 @@ def session(run):
     typ('A centred line\r')
     s.K(ord('l'), CTRL)                         # left again
     m.para(PF_ALIGN, 0)
-    s.menu(4, 4)                                # a quotation
+    s.menu(STYLE, 4)                            # a quotation
     m.named(4)
     typ('A quotation, indented on both sides and in italic, long enough to wrap onto a second '
         'line of the page.\r')
-    s.menu(4, 0)                                # Body, justified, a line and a half
+    s.menu(STYLE, 0)                            # Body, justified, a line and a half
     m.named(0)
     s.K(ord('j'), CTRL)
     m.para(PF_ALIGN, 3)
-    s.menu(5, 7, 'menu')                        # Format > One and a half lines
+    s.menu(FORMAT, 7, 'menu')                   # Format > One and a half lines
     m.para(PF_SPACING, 3)
     typ('A justified paragraph: its lines reach both edges of the column, the spaces between '
         'its words stretched to fill them, all but its last line, which stays at the left.')
@@ -974,26 +999,394 @@ def session_big(run):
     return s, files
 
 
+def speed_doc():
+    """the speed session's document: a short paragraph, a long one (some
+    1,400 characters: 16 lines or so; LONGMARK on its first line), one in
+    bold and italic runs (STYLEMARK italic in it), then plain paragraphs
+    to fill the screen and more"""
+    pl = (SANS, 12, 0)
+    out = []
+
+    def put(t, st=pl):
+        out.extend((ord(ch),) + st for ch in t)
+
+    def words(n, x, styled=False):
+        for w in range(n):
+            x = (x * 1103515245 + 12345) & 0x7FFFFFFF
+            st = pl
+            if styled and w % 2:
+                st = (SANS, 12, 1) if w % 4 == 1 else (SANS, 12, 2)
+            put(cwrd.WORDS[(x >> 8) % len(cwrd.WORDS)], st)
+            put(' ')
+        return x
+    put('Typing speed: the document for the per-key timings.\r')
+    put('A long paragraph begins here, LONGMARK on its first line, and it goes on ')
+    x = words(230, 11)
+    put('to its end.\r')
+    put('Styles: ')
+    x = words(20, x, True)
+    put('STYLEMARK', (SANS, 12, 2))
+    put(' ', (SANS, 12, 2))
+    x = words(60, x, True)
+    put('end.\r')
+    for k in range(30):
+        x = words(30 + k % 25, x)
+        put('the end of paragraph %d.\r' % k)
+    put('The last line.')
+    return out
+
+
+def session_speed(run):
+    """the per-key timings (SESSION=speed; tools/speed.sh): each key put
+    with 'Q' (the clock from the moment it is in the ROM's key queue to
+    the program's drawing after it, "CW LAT"), one at a time, the program
+    idle between them: typing at a document's end, in the first line of
+    a long paragraph (it wraps again to its end), in a run of italic,
+    with Bold turned on, Backspace, Return; then keys at 30 and 60 a
+    second whatever the program does ('R'), and 8 at once: none lost
+    (the states). Then BIG.cwr (BIG_SIZE, 400,000 by default: more than
+    the 512 KB machine's cache, so it pages) typed in at its start, its
+    end and its middle, and at 30 a second at its start"""
+    s = Script()
+    files = {}
+    doc = speed_doc()
+    cwrd.write(os.path.join(run, 'SPEED.cwr'), doc)
+    big = cwrd.big_chars(int(os.environ.get('BIG_SIZE', '400000')))
+    k = next(i for i in range(len(big) // 2, len(big)) if big[i][0] == cwrd.CR) + 1
+    big[k:k] = [(ord(c), SANS, 12, 0) for c in 'MIDDLEMARK ']
+    cwrd.write(os.path.join(run, 'BIG.cwr'), big)
+    state_n = [0]
+
+    s.labels = {}
+    s.lossy = {}
+
+    def state(m, name, label=None, lossy=False):
+        """lossy: keys faster than the program keeps up with may be lost
+        (the ROM's queue full): the characters counted, not checked; the
+        model then takes the document as the program has it (chars)"""
+        state_n[0] += 1
+        st = m.state(name)
+        st['cur_in'] = 1
+        if lossy:
+            s.lossy[state_n[0]] = st['chars']
+            st = {'cur_in': 1}
+        s.L(state_n[0], st)
+        if label:
+            s.labels[state_n[0]] = label
+
+    def q(t, m):
+        for ch in t:
+            s.b += bytes([ord('Q'), ord(ch) if ch != '\r' else RET])
+            m.type(ch)
+        s.W(10)
+
+    def held(k, n, f, m, t):
+        s.b += bytes([ord('R'), k, n, f])
+        s.W(60)
+        m.type(t)
+
+    def bs(m, n):
+        for _ in range(n):
+            s.b += bytes([ord('Q'), BS])
+            del m.c[m.cur - 1]
+            m.cur = m.anc = m.cur - 1
+            m.mod = True
+        m.moved()
+        s.W(10)
+
+    last = ['']
+
+    def find(word, m, at):
+        s.K(CTRL_HOME, CTRL)
+        s.K(ord('f'), CTRL)
+        for _ in range(len(last[0])):
+            s.K(BS)
+        s.T(word)
+        last[0] = word
+        s.K(RET)
+        s.W(20)
+        s.K(ESC)
+        s.K(KEY_RIGHT)
+        m.move(at)
+
+    def opn(letter, m, name):
+        s.K(ord('o'), CTRL)
+        s.W(40)
+        s.K(ord(letter))
+        s.W(10)
+        s.Z()
+        s.K(RET)
+        s.W(60)
+        s.Y('l')
+        state(m, name)
+
+    s.W(90)
+    m = Model(doc)
+    opn('S', m, 'SPEED.cwr')
+    s.K(CTRL_END, CTRL)                         # 1: at the document's end
+    m.move(len(m.c))
+    s.W(20)
+    q(' and more', m)
+    state(m, 'SPEED.cwr', "typing at a document's end")
+
+    def mark(word):
+        t = ''.join(chr(ch[0]) for ch in m.c)
+        return t.index(word) + len(word)
+    find('LONGMARK', m, mark('LONGMARK'))       # 2: the long paragraph's first line
+    q(' typed in', m)
+    state(m, 'SPEED.cwr', "typing in a long paragraph's first line")
+    find('STYLEMARK', m, mark('STYLEMARK'))     # 3: in a run of italic
+    q(' slanted', m)
+    state(m, 'SPEED.cwr', 'typing in a run of italic')
+    s.K(ord('b'), CTRL)                         # 4: Bold on, then typing
+    m.toggle(1)
+    q(' bolder', m)
+    state(m, 'SPEED.cwr', 'typing with Bold turned on')
+    find('typed in', m, mark('typed in'))
+    bs(m, 9)                                    # 5: Backspace in the long paragraph
+    state(m, 'SPEED.cwr', 'Backspace in the long paragraph')
+    q('\r\r\r', m)                              # 6: Return splits it
+    state(m, 'SPEED.cwr', 'Return in the long paragraph')
+    find('LONGMARK', m, mark('LONGMARK'))       # 7: keys at 30 and 60 a second, 8 at once
+    held(ord('x'), 60, 2, m, 'x' * 60)
+    state(m, 'SPEED.cwr', '60 keys at 30 a second (long paragraph)')
+    s.T('abcdefgh')
+    m.type('abcdefgh')
+    s.W(30)
+    state(m, 'SPEED.cwr', '8 keys at once')
+    held(ord('y'), 60, 1, m, 'y' * 60)          # (faster than the keyboard's repeat: some may be lost)
+    state(m, 'SPEED.cwr', '60 keys at 60 a second (long paragraph)', lossy=True)
+    s.K(ord('s'), CTRL)                         # (saved: the Open after it asks nothing)
+    s.W(40)
+    ln = []                                     # one-line paragraphs: a list, a letter's lines
+    for k in range(400):
+        ln.extend((ord(ch), SANS, 12, 0) for ch in 'Line %d of a list of short paragraphs.\r' % k)
+    cwrd.write(os.path.join(run, 'LINES.cwr'), ln)
+    n = Model(ln)
+    opn('L', n, 'LINES.cwr')
+    s.K(KEY_DOWN)                               # (the second line's end)
+    s.K(END)
+    n.move(next(i for i in range(len(ln)) if ln[i][0] == cwrd.CR and i > 40))
+    s.W(20)
+    q(' and more', n)
+    state(n, 'LINES.cwr', 'one-line paragraphs: typing at the second one\'s end')
+    s.K(ord('s'), CTRL)
+    s.W(40)
+    n.mod = False
+    state(n, 'LINES.cwr')
+    b = Model(big)
+    opn('B', b, 'BIG.cwr')                      # 8: the big document, all of it read
+    s.K(CTRL_HOME, CTRL)
+    b.move(0)
+    s.W(20)
+    q('Start ', b)
+    state(b, 'BIG.cwr', "the big document: typing at its start")
+    s.K(CTRL_END, CTRL)
+    b.move(len(b.c))
+    s.W(20)
+    q(' the end', b)
+    state(b, 'BIG.cwr', "the big document: typing at its end")
+    t = ''.join(chr(ch[0]) for ch in b.c)
+    find('MIDDLEMARK', b, t.index('MIDDLEMARK') + len('MIDDLEMARK'))
+    q(' middle', b)
+    state(b, 'BIG.cwr', "the big document: typing in its middle")
+    s.K(CTRL_HOME, CTRL)
+    b.move(0)
+    s.W(20)
+    held(ord('z'), 60, 2, b, 'z' * 60)
+    state(b, 'BIG.cwr', 'the big document: 60 keys at 30 a second at its start', lossy=True)
+    s.stop('end')
+    return s, files
+
+
+def session_page(run):
+    """stage 3 (SESSION=page; W44-W48): page breaks typed (Insert > Page
+    break, Ctrl+Return), the header and footer (Insert > Header and
+    footer: the panel, its fields, not on the first page), the page setup
+    (File > Page setup: Letter clicked, the top margin stepped, OK
+    clicked), saved (CWRD 1.4: PAGE) and opened again, exported as PDF
+    (into /DOCUMENTS, Polish in it); documents of 1.1, 1.2 (a page break)
+    and 1.3 opened; a big document (BIG_SIZE, 300,000 by default) opened,
+    its pages counted, exported as PDF (timed), an export stopped with
+    Esc (the file deleted), Go to page 5 (the PDF's page 5 starts there)"""
+    s = Script()
+    files = {}
+    pdfs = []
+    s.W(90)
+    m = Model()
+
+    def typ(t):
+        s.T(t)
+        m.type(t)
+    # page breaks: the menu's, Ctrl+Return's
+    pl = POLISH.encode('iso8859_16').replace(b'\r', b' ')
+    typ('Page one of a document in pages. ')
+    s.T(pl)
+    m.type(pl.decode('latin-1'))
+    typ('\rIts second paragraph.')
+    s.menu(INSERT, 0)                           # Insert > Page break
+    m.pbreak()
+    typ('Page two, after a page break from the menu.')
+    s.K(RET, CTRL)                              # Ctrl+Return
+    m.pbreak()
+    typ('Page three, after Ctrl+Return.')
+    s.L(1, m.state('', 3))
+    s.stop('pbreak')
+    # the header and footer: the panel at the header
+    s.menu(INSERT, 2)                           # Insert > Header and footer...
+    s.W(20)
+    s.T('{name}|Veranda Write|{date}')
+    s.K(TAB)
+    s.T('Page {page} of {pages}')
+    s.K(TAB)
+    s.K(ord(' '))                               # Not on the first page
+    s.W(10)
+    s.stop('hfpanel')
+    s.K(RET)                                    # OK
+    s.W(30)
+    s.L(2, m.state('', 3))
+    s.stop('bands')
+    # the page setup: Letter clicked, the top margin 5 steps (0.05 inch) more, OK clicked
+    s.menu(FILEM, 4)                            # File > Page setup...
+    s.W(20)
+    s.click(180, 320)                           # (the Letter button)
+    s.W(10)
+    s.K(KEY_DOWN)                               # Top
+    for _ in range(5):
+        s.K(KEY_RIGHT)
+    s.W(10)
+    s.stop('setup')
+    s.click(480, 416)                           # (OK)
+    s.W(40)
+    s.L(3, m.state('', 3))
+    # saved (1.4) and opened again
+    s.K(ord('s'), CTRL | SHIFT)
+    s.W(40)
+    for _ in range(len('Untitled.cwr')):
+        s.K(BS)
+    s.T('Pages.cwr')
+    s.K(RET)
+    s.W(40)
+    m.mod = False
+    s.L(4, m.state('Pages.cwr', 3))
+    files['Pages.cwr'] = (list(m.c), list(m.p))
+    page = {'paper': 1, 'flags': 1, 'w': 12240, 'h': 15840, 'top': 1800, 'bottom': 1417, 'left': 1417,
+            'right': 1417, 'head': '{name}|Veranda Write|{date}', 'foot': 'Page {page} of {pages}'}
+    s.K(ord('n'), CTRL)
+    s.W(20)
+    s.K(ord('o'), CTRL)
+    s.W(40)
+    s.K(ord('P'))
+    s.W(10)
+    s.K(RET)
+    s.W(60)
+    s.L(5, m.state('Pages.cwr', 3))
+    # exported as PDF: the dialog in /DOCUMENTS, the document's name
+    s.K(ord('p'), CTRL | SHIFT)
+    s.W(40)
+    s.stop('pdfdlg')
+    s.K(RET)
+    s.W(60)
+    s.L(6, m.state('Pages.cwr', 3))
+    pdfs.append({'path': 'DOCUMENTS/Pages.pdf', 'pages': 3, 'size': [612, 792],
+                 'texts': ['Page one of a document in pages.', POLISH.replace('\r', ' '),
+                           'Page three, after Ctrl+Return.'],
+                 'on': [[2, 'Veranda Write'], [2, 'Pages'], [2, 'Page 2 of 3'], [3, 'Page 3 of 3'],
+                        [2, 'Page two, after a page break from the menu.']],
+                 'off': [[1, 'Veranda Write'], [1, 'Page 1 of 3']]})
+    # older documents: 1.1 (paragraph styles), 1.2 (a page break), 1.3 (Polish)
+    d1 = [(ord(c), SANS, 12, 0) for c in 'A heading\rWritten by 1.1.\r']
+    p1 = [NAMED[1], BODY, BODY]
+    cwrd.write(os.path.join(run, 'OLD11.cwr'), d1, paras=p1, minor=1)
+    d2 = [(ord(c), SANS, 12, 0) for c in 'Page one, 1.2.\r\rPage two.']
+    cwrd.write(os.path.join(run, 'OLD12.cwr'), d2, minor=2, breaks=(15,))
+    d3 = [(c, SANS, 12, 0) for c in POLISH.encode('iso8859_16')]
+    cwrd.write(os.path.join(run, 'OLD13.cwr'), d3, minor=3)
+    for k, (d, pp, nm, pg) in enumerate(((d1, p1, 'OLD11.cwr', 1), (d2, None, 'OLD12.cwr', 2),
+                                         (d3, None, 'OLD13.cwr', 1))):
+        s.K(ord('o'), CTRL)
+        s.W(40)
+        for _ in range(k + 1):
+            s.K(ord('O'))
+            s.W(6)
+        s.K(RET)
+        s.W(60)
+        s.L(7 + k, Model(d, pp).state(nm, pg))
+    s.stop('old')
+    # the big document: its pages, a PDF of them (timed), one stopped
+    big = cwrd.big_chars(int(os.environ.get('BIG_SIZE', '300000')))
+    cwrd.write(os.path.join(run, 'XBIG.cwr'), big, minor=3)
+    b = Model(big)
+    s.K(ord('o'), CTRL)
+    s.W(40)
+    s.K(ord('X'))
+    s.W(10)
+    s.Z()
+    s.K(RET)
+    s.W(30)
+    s.Y('l')
+    s.L(10, b.state('XBIG.cwr'))
+    s.K(ord('p'), CTRL | SHIFT)
+    s.W(40)
+    s.Z()
+    s.K(RET)
+    s.W(30)
+    s.Y('p')
+    s.L(11, b.state('XBIG.cwr'))
+    pdfs.append({'path': 'DOCUMENTS/XBIG.pdf', 'pages_state': 11, 'size': [595.28, 841.89],
+                 'texts': [' '.join(''.join(chr(c[0]) for c in big[:200]).split()[:6]),
+                           ' '.join(''.join(chr(c[0]) for c in big[-300:]).split()[-6:])]})
+    s.K(ord('p'), CTRL | SHIFT)                 # another, stopped by Esc
+    s.W(40)
+    for _ in range(len('XBIG.pdf')):
+        s.K(BS)
+    s.T('Stop.pdf')
+    s.b += bytes([ord('A'), RET, ESC, 240])     # Return, then Esc 4 seconds on, while it writes
+    s.W(60)
+    s.L(12, b.state('XBIG.cwr'))
+    s.K(ord('g'), CTRL | SHIFT)                 # Go to page 5: where the PDF's page 5 starts
+    s.W(30)
+    s.T('5')
+    s.W(10)
+    s.stop('goto')
+    s.K(RET)
+    s.W(30)
+    s.L(13, {'name': 'XBIG.cwr'})
+    s.stop('bigpages')
+    s.stop('end')
+    s.pdfs = pdfs
+    s.absent = ['DOCUMENTS/Stop.pdf']
+    s.console = ['CW PDF 0', 'CW PDF 3']
+    s.pagestart = {'state': 13, 'doc': 'XBIG.cwr', 'pdf': 'DOCUMENTS/XBIG.pdf', 'page': 5}
+    s.pagefile = {'Pages.cwr': {'page': page, 'pbreaks': 2}}
+    return s, files
+
+
 def main():
     a = sys.argv[1:]
     if not a:
         sys.exit(__doc__)
     run = a[0]
     stop = a[a.index('--stop') + 1] if '--stop' in a else None
-    s, files = (session_big if os.environ.get('SESSION') == 'big' else session)(run)
+    s, files = {'big': session_big, 'speed': session_speed, 'page': session_page}.get(os.environ.get('SESSION'),
+                                                                                    session)(run)
     b = bytes(s.b)
     if stop:
         b = b[:s.names[stop]]
     b += b'S'
-    if len(b) > 6144:
-        sys.exit('script.py: the session is %d bytes (6144 at most: overlay 14 has the rest of its bank)' % len(b))
+    if len(b) > 5120:
+        sys.exit('script.py: the session is %d bytes (5120 at most: overlay 17 has the rest of its bank)' % len(b))
     open(os.path.join(run, 'CW.PLY'), 'wb').write(b)
     def fexp(v):
         if isinstance(v, dict):
             return {'sha256': hashlib.sha256(v['raw']).hexdigest()} if 'raw' in v else v
         return {'sum': cwrd.doc_sum(v[0]), 'chars': len(v[0]), 'psum': cwrd.par_sum(v[1])}
     json.dump({'states': s.states, 'files': {k: fexp(v) for k, v in files.items()},
-               'stops': list(s.names), **({'SESSION': 'big'} if os.environ.get('SESSION') == 'big' else {})},
+               'stops': list(s.names), 'labels': getattr(s, 'labels', {}), 'lossy': getattr(s, 'lossy', {}),
+               'pdfs': getattr(s, 'pdfs', []), 'absent': getattr(s, 'absent', []),
+               'console': getattr(s, 'console', []), 'pagestart': getattr(s, 'pagestart', None),
+               'pagefile': getattr(s, 'pagefile', {}),
+               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page') else {})},
               open(os.path.join(run, 'expect.json'), 'w'), indent=1)
 
 if __name__ == '__main__':

@@ -32,7 +32,23 @@ unsigned int top_line;
 pos_t s_lo, s_hi;                       /* the selection as drawn */
 unsigned char cur_on;
 static unsigned char blink;             /* cw_jiffies when the cursor was last shown or hidden */
-static unsigned int cx, cy, ch;         /* the cursor as drawn */
+static unsigned int cx, ch;             /* the cursor as drawn */
+unsigned int cy;                        /* (its top: view2.c's clear_below reads it) */
+/* the cursor's x and its style's ascent and descent, found by draw_row
+   when it drew the cursor's line (W43: view_cursor's walk along the line
+   for them took 0.007 s): for the cursor at cc_cur in the row at cc_pos */
+static pos_t cc_cur = 0xFFFFFFFFUL, cc_pos;
+static unsigned int cc_x;
+static unsigned char cc_a, cc_d, cc_i;  /* (cc_i: the row being drawn) */
+
+static void __fastcall__ cc_set(unsigned int x)
+{
+    cc_x = x;
+    cc_a = fl_a;
+    cc_d = fl_d;
+    cc_cur = cur;
+    cc_pos = vr[cc_i].pos;
+}
 
 const struct vrwin win = { 0, 2, 80, 58, 2, 2, VW_CLOSE };
 unsigned char sb_a = 0xFF, sb_n;        /* the scroll bar's thumb as drawn (view2.c) */
@@ -66,32 +82,10 @@ void __fastcall__ clip(unsigned char on)
 }
 
 /*---------------------------------------------------------------
-  the rows
+  the rows (rows_build: view2.c)
  ---------------------------------------------------------------*/
-void rows_build(void)
-{
-    unsigned int i = top_line, y = TY0, n;
-    pos_t p;
-    struct vrow *r = vr;
-    if (top_line >= lt_n)
-        top_line = i = lt_n - 1;
-    p = lt_start(i);
-    n = par_number(i);
-    vn = 0;
-    while (vn < VMAX && i < lt_n && y <= TA_BOT) {
-        lt_get(i, &r->l);
-        if (vn && (r->l.f & LF_FIRST))  /* (a numbered list's next: one more) */
-            n = par[r->l.p].kind != PK_NUMBER ? 0 : n + 1;
-        r->n = n;
-        r->pos = p;
-        r->y = y;
-        p += r->l.len;
-        y += r->l.h;
-        ++i;
-        ++vn;
-        ++r;
-    }
-}
+unsigned char pv_st[(VMAX + 7) / 8];    /* (pages.c's pg_view: which rows start a page) */
+unsigned int pv_pg;
 
 unsigned char __fastcall__ view_row(unsigned int y)
 {
@@ -130,8 +124,7 @@ unsigned int __fastcall__ sp_w(unsigned int w)
 /*---------------------------------------------------------------
   drawing a row
  ---------------------------------------------------------------*/
-static char run[100];
-unsigned char pb_row;                   /* the row has a page break's code */
+char run[100];                          /* (a run of a row; v_pbreak's and the bands' text: main RAM) */
 
 unsigned int __fastcall__ row_bot(unsigned char i)
 {
@@ -150,6 +143,7 @@ void __fastcall__ draw_row(unsigned char i)
     static unsigned int x, rx, k, j;
     static pos_t p, e;
     static unsigned char s, n, c, a;
+    static unsigned int cj, o;          /* the cursor's byte in the line (0xFFFF: not in it), p's */
     static const struct pstyle *ps;
     r = &vr[i];
     if (r->y > TA_BOT)
@@ -171,6 +165,9 @@ void __fastcall__ draw_row(unsigned char i)
     e = p + r->l.len;
     s = r->l.s;
     n = 0;
+    cj = cur >= p && cur <= e ? (unsigned int)(cur - p) : 0xFFFF;
+    cc_i = i;
+    o = 0;
     fl_rr(s);
     if ((r->l.f & LF_FIRST) && IS_LIST(ps->kind)) {
         /* a list's bullet or number, in the line's first style */
@@ -213,11 +210,12 @@ void __fastcall__ draw_row(unsigned char i)
                     if (c == K_CS) {
                         s = lb[j + 1];
                         fl_rr(s);
-                    } else if (c == K_PB)
-                        pb_row = 1;
+                    }
                     j += 3;
                     continue;
                 }
+                if (o + j == cj)
+                    cc_set(x);          /* (the cursor's character: a tab, CR or space) */
                 if (c == CH_TAB) {
                     x += TABW - (x - xs) % TABW;
                     ++j;
@@ -233,6 +231,8 @@ void __fastcall__ draw_row(unsigned char i)
                     continue;
                 }
             }
+            if (o + j == cj)
+                cc_set(x);              /* (the cursor's character) */
             if (!n)
                 rx = x;
             run[n++] = c;
@@ -242,7 +242,10 @@ void __fastcall__ draw_row(unsigned char i)
         if (!j)
             break;
         p += j;
+        o += j;
     }
+    if (o == cj)
+        cc_set(x);                      /* (the cursor at the line's end: the document's) */
     if (n) {
         rr_s = run;
         rr_n = n;
@@ -256,26 +259,19 @@ void __fastcall__ draw_row(unsigned char i)
     rr_yhi = TA_BOT;
     rr_blit();
     dispBufferOn = ST_WR_FORE | ST_WR_BACK;
-    if (pb_row)
+    if (r->l.f & LF_PB)
         v_pbreak(i);                    /* (a page break's line: overlay 5) */
+    if (r->g)
+        v_band(i);                      /* (the band above: overlay 14) */
     if (s_lo < s_hi)
         row_sel(i, s_lo, s_hi);
     if (cur_on && cy >= r->y && cy <= row_bot(i))
         cur_on = 0;                     /* (the screens written: the cursor's gone) */
 }
 
-/* below the last row: the page's paper */
-void clear_below(void)
-{
-    unsigned int y = vn ? vr[vn - 1].y + vr[vn - 1].l.h : TY0;
-    if (y > TA_BOT)
-        return;
-    dispBufferOn = ST_WR_FORE | ST_WR_BACK;
-    SetPattern(0);
-    WRectangle(PG_L, y, PG_R, TA_BOT);
-    if (cur_on && cy >= y)
-        cur_on = 0;
-}
+/* (view2.c's clear_below: the paper under the last row; clr_y: the
+   screens are the paper from there down, 0xFFFF not known) */
+unsigned int clr_y = 0xFFFF;
 
 /*---------------------------------------------------------------
   the cursor
@@ -304,7 +300,12 @@ void view_cursor(unsigned char on)
     if (L < top_line || L >= top_line + vn)
         return;
     i = (unsigned char)(L - top_line);
-    cx = walk(vr[i].pos, &vr[i].l, 0, cur);
+    if (cc_cur == cur && cc_pos == vr[i].pos) {
+        cx = cc_x;                      /* (draw_row found it) */
+        fl_a = cc_a;
+        fl_d = cc_d;
+    } else
+        cx = walk(vr[i].pos, &vr[i].l, 0, cur);
     if (cx > PG_R - 2)
         cx = PG_R - 2;
     cy = vr[i].y + vr[i].l.a - fl_a;    /* (walk: the style at the cursor) */
@@ -340,83 +341,15 @@ void view_blink(void)
 /*---------------------------------------------------------------
   the status bar
  ---------------------------------------------------------------*/
-static char sl[64] = { 0 }, sr[40] = { 0 };   /* (DATA, main RAM: the window chrome reads them) */
-
-static char *put_u2(char *p, unsigned long v)
-{
-    char b[11];
-    unsigned char n = 0;
-    do {
-        b[n++] = (char)('0' + v % 10);
-        v /= 10;
-    } while (v);
-    while (n)
-        *p++ = b[--n];
-    return p;
-}
-
-static char *put_s2(char *p, const char *s)
-{
-    while (*s)
-        *p++ = *s++;
-    return p;
-}
+char sl[64] = { 0 }, sr[40] = { 0 };   /* (DATA, main RAM: the window chrome reads them;
+                                           view2.c's v_status writes them) */
 
 /* the page and its line of the cursor's line, the pages: pages.c's
-   (overlay 5); "~" while they are a guess (a document being opened, or
+   (overlay 13); "~" while they are a guess (a document being opened, or
    not counted to its end yet) */
 unsigned int pg_arg, pg_pc, pg_lc, pg_tot, pg_line;
 unsigned char pg_est;
 unsigned char pg_buf[36 * LT_SZ];       /* (pages.c's window of the line table: main RAM, cb_read's) */
-
-static unsigned char t_mod = 0xFF;      /* the title band's "modified" */
-
-void view_status(void)
-{
-    char *p = sl;
-    unsigned int col = 0;
-    pos_t q;
-    lt_find(cur);
-    q = pos_norm(lf_pos);               /* (past the codes the line starts with) */
-    pg_arg = lf_i;
-    pg_at();
-    while (q < cur && q < DOC_LEN) {    /* the column: characters from the line's start (W41: bounded) */
-        q = pos_next(q);
-        ++col;
-    }
-    p = put_s2(p, pg_est & 1 ? "Page ~" : "Page ");
-    p = put_u2(p, pg_pc);
-    p = put_s2(p, pg_est & 2 ? " of ~" : " of ");
-    p = put_u2(p, pg_tot);
-    if (ld_kind)
-        p = put_s2(p, "...");
-    p = put_s2(p, "   Line ");
-    p = put_u2(p, pg_lc);
-    p = put_s2(p, "   Col ");
-    p = put_u2(p, col + 1);
-    if (HAS_SEL()) {
-        p = put_s2(p, "   ");
-        p = put_u2(p, SEL_HI() - SEL_LO());
-        p = put_s2(p, " selected");
-    }
-    *p = 0;
-    p = sr;
-    if (status_msg[0]) {
-        p = put_s2(p, status_msg);
-        p = put_s2(p, "   ");
-    }
-    p = put_s2(p, doc_modified ? "Modified" : "Saved");
-    *p = 0;
-    dispBufferOn = ST_WR_FORE | ST_WR_BACK;
-    vr_win_status(&win, sl, sr);
-    if (doc_modified != t_mod) {
-        t_mod = doc_modified;
-        view_title();
-    }
-    status_dirty = 0;
-}
-
-
 
 /*---------------------------------------------------------------
   the rest of the view: overlay 5 (view2.c), through these
@@ -427,6 +360,7 @@ void view_frame(void) { callb(bank5, v_frame); }
 void view_refresh(void) { callb(bank5, v_refresh); }
 
 void view_title(void) { callb(bank5, v_title); }
+void view_status(void) { callb(bank8, t_status); }
 void view_toolbar(void) { callb(bank12, t_toolbar); }
 void view_fix_cursor(void) { callb(bank5, v_fix_cursor); }
 void __fastcall__ view_scroll(int n) { v_n = n; callb(bank5, v_scroll); }
