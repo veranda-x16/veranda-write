@@ -165,6 +165,8 @@ void v_all(void)
     rows_build();
     s_lo = SEL_LO();
     s_hi = SEL_HI();
+    hf_np = 0;
+    hf_tot = pg_tot;
     for (i = 0; i < vn; ++i)
         draw_row(i);
     clear_below();
@@ -338,6 +340,8 @@ void v_refresh(void)
     static pos_t q, slo, shi;
     pos_t lo = SEL_LO(), hi = SEL_HI(), e;
     view_cursor(0);
+    if (hf_np && hf_tot != pg_tot)
+        v_all();                        /* (W55: a band's {pages} drawn with another count) */
     if (dm_on) {
         memcpy(ov, vr, sizeof vr);
         ovn = vn;
@@ -407,8 +411,12 @@ void v_refresh(void)
         s_hi = hi;
         PM("cmp");
         for (i = 0; i < vn; ++i)
-            if (dirty[i] == 1 || (dirty[i] == 2 && vr[i].y + vr[i].l.h - 1 > TA_BOT))
-                { draw_row(i); PM("row"); }
+            if (dirty[i] == 1 || (dirty[i] == 2 && vr[i].y + vr[i].l.h - 1 > TA_BOT)) {
+                draw_row(i);
+                PM("row");
+                if (vr[i].y + vr[i].l.h > clr_y)
+                    clr_y = 0xFFFF;     /* (W55: drawn over the paper clear_below left) */
+            }
         clear_below();
         clip(0);
         dm_on = 0;

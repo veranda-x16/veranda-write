@@ -410,6 +410,7 @@ extern char hf_part[3][HF_OUT];
 extern const char *hf_name;             /* {name}: the document's name */
 extern char hf_date[24];                /* {date}: "23 November 2026" */
 void FASTCALL hf_make(const char *s, unsigned int pg, unsigned int n);
+extern unsigned char hf_np;             /* 1: a {pages} made (W55: v_all clears it) */
 void hf_today(void);                    /* hf_date: today (the X16's clock) */
 /* is the header or footer s shown on page pg? */
 #define HF_ON(s, pg) ((s)[0] && ((pg) != 1 || !(pgs.flags & PS_NOFIRST)))

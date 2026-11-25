@@ -28,7 +28,15 @@
                 (page.c, hf.c)
      overlay 15 the PDF (pdf.c, pdfx.c)
      overlay 16 the page setup panel, File > Export as PDF (pgpanel.c)
-     overlay 17 (test builds) the session's logs
+     overlay 17 a ZIP's parts inflated, their XML's tokens (ozip.c,
+                oxml.c): .docx and .odt documents opened
+     overlay 18 the text of a .docx or .odt put into the document, the
+                styles it defines (oemit.c), what was changed (oxnote.c)
+     overlay 19 the .docx reader (odocx.c)
+     overlay 20 the .odt reader (oodt.c)
+     overlay 21 the document as a .docx or an .odt (oexp.c, ocrc.s)
+     overlay 22 the XML text of those, its templates (oparts.c)
+     overlay 23 (test builds) the session's logs
    callb() runs a function of another overlay and maps the caller's back.
 
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
@@ -78,7 +86,9 @@ extern unsigned int ta_bot;
 #define C_THUMB   4                     /* SELECT: a button on, an item lit */
 
 /* main.c */
-extern unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16, bank17;
+extern unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16;
+extern unsigned char bank17, bank18, bank19, bank20, bank21, bank22, bankt;
+#define TOVL 23                         /* the test build's overlay (src/v/test.c) */
 extern unsigned char sw_tbank;
 extern unsigned char cw_idle;           /* the main loop found nothing to do */
 void __fastcall__ callb(unsigned char b, void (*f)(void));
@@ -267,6 +277,12 @@ void t_pdf(void);
    setup read from the card (W44) */
 void t_pbreak(void);
 void pg_loaddef(void);
+/* (pgview.c's pg_field, for pgpanel.c: a header or footer field in Gate
+   Sans 12; main RAM) */
+extern const char *pf_s;
+extern unsigned int pf_x, pf_y, pf_w;
+extern unsigned char pf_ok;
+void pg_field(void);
 
 /* clip.c (overlay 7) */
 void clip_copy(void), clip_cut(void), clip_paste(void);

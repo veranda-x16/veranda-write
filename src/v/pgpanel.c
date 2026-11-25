@@ -16,7 +16,7 @@
    (not an undo step: it marks the document modified) and wraps the text
    again when the paper or the margins changed.
 
-   Export as PDF: the Save dialog (the SDK's) opens in /DOCUMENTS with the
+   Export as PDF (and as Word or OpenDocument: W52): the Save dialog (the SDK's) opens in /DOCUMENTS with the
    document's name and ".pdf"; a file there is replaced when the user
    says so. All of a document being opened is read first, its pages
    counted (for {pages}), then pdf.c (overlay 15) writes the file a
@@ -30,6 +30,7 @@
 #include <vrpath.h>
 #include "cwv.h"
 #include "view.h"
+#include "../office.h"
 #pragma code-name ("OVERLAY16")
 #pragma rodata-name ("OVL16RO")
 #pragma bss-name ("OVL16BSS")
@@ -195,11 +196,23 @@ static void __fastcall__ item(unsigned char k)
         t = k == 5 ? pgs.head : pgs.foot;
         ColorRect(FX >> 3, FW >> 3, by >> 3, 2, 0);
         WRectangle(FX, by, FX + FW - 1, by + 15);
-        for (w = 0, e = t; *e; ++e)
-            w += GetCharWidth(*e);
-        while (w > FW - 14)
-            w -= GetCharWidth(*t++);
-        text(t, FX + 5, by + 11);
+        /* its text in the document's Gate Sans 12 (Polish letters: W54),
+           the band's rows across the page drawn first (the label after) */
+        pf_s = t;
+        pf_x = FX + 5;
+        pf_y = by + 1;
+        pf_w = FW - 14;
+        callb(bank14, pg_field);
+        ui();
+        if (pf_ok)
+            w = pf_w;
+        else {
+            for (w = 0, e = t; *e; ++e)
+                w += GetCharWidth(*e);
+            while (w > FW - 14)
+                w -= GetCharWidth(*t++);
+            text(t, FX + 5, by + 11);
+        }
         rbox(FX + 1, by + 1, FX + FW - 2, by + 14);
         if (foc == k)
             WInvertRectangle(FX + 6 + w, by + 3, FX + 7 + w, by + 12);
@@ -485,33 +498,38 @@ void pp_press(void)
 }
 
 /*---------------------------------------------------------------
-  File > Export as PDF
+  File > Export as PDF, as Word (.docx), as OpenDocument (.odt): t_arg
+  0, 1, 2 (W47, W52)
  ---------------------------------------------------------------*/
 extern unsigned char pdf_fh;            /* (pdfx.c: main RAM) */
 static char dir[64];
+static const char *const xext[3] = { ".pdf", ".docx", ".odt" };
+static const char *const xttl[3] = { "Export as PDF", "Export as Word", "Export as OpenDocument" };
+void pg_export(void);                   /* (pgview.c) {date}, {name} in iobuf */
 
 void t_pdf(void)
 {
-    static unsigned char e, h;
+    static unsigned char e, h, k;
     char *p;
     if (pp_on)
         return;
+    k = t_arg;
     if (ld_kind)
         ld_need(0xFFFFFFFFUL);          /* (all of it in first) */
-    /* the name: the document's, its extension .pdf */
+    /* the name: the document's, its extension the format's */
     strcpy(name, docname[0] ? docname : docname[1] ? docname + 1 : "Untitled");
     p = strrchr(name, '.');
     if (p && strlen(p) <= 4)
         *p = 0;
     name[58] = 0;
-    strcat(name, ".pdf");
+    strcat(name, xext[k]);
     strcpy(dir, (char *)curDirName);
     strcpy((char *)curDirName, vr_cd(VR_DOCS));
     for (;;) {
-        if (!file_dlg(VRF_SAVE, "Export as PDF", name))
+        if (!file_dlg(VRF_SAVE, xttl[k], name))
             goto back;
-        if (!strchr(name, '.') && strlen(name) < 59)
-            strcat(name, ".pdf");
+        if (!strchr(name, '.') && strlen(name) < 58)
+            strcat(name, xext[k]);
         h = FOpen(name, 'r');
         if (h < 2)
             break;
@@ -528,9 +546,15 @@ void t_pdf(void)
     MARK("pdf<");
     pg_arg = 1;
     pg_first();                         /* (every page counted: {pages}) */
-    pdf_pages = pg_tot;
-    pdf_title = name;
-    e = pdf_write();
+    if (!k) {
+        pdf_pages = pg_tot;
+        pdf_title = name;
+        e = pdf_write();
+    } else {
+        callb(bank14, pg_export);       /* ({date}, {name}) */
+        e = oe_write(k);
+        e = e == OE_STOP ? PE_STOP : e ? PE_IO : 0;
+    }
     if (FClose(pdf_fh) && !e)
         e = PE_IO;
     MARK("pdf>");
@@ -548,7 +572,9 @@ void t_pdf(void)
     else if (e == PE_MEM)
         message("There is not enough memory", "for the PDF's table.");
     else if (e)
-        message("The PDF could not be written", "(is the card full?)");
+        message("The file could not be written", "(is the card full?)");
+    else if (k)
+        set_status("Exported");
     else {
         p = num(status_msg, pdf_page);
         strcpy(p, pdf_page == 1 ? " page exported" : " pages exported");

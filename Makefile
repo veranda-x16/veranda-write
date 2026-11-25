@@ -17,21 +17,34 @@ HOSTDIR := $(BUILD)/host
 
 # the model: portable C, the same files on the host and the X16
 CORE    := src/bank.c src/cbuf.c src/cbufx.c src/swap.c src/swapwh.c src/text.c src/edit.c src/undo.c src/layout.c src/layfix.c src/format.c src/find.c src/styles.c src/gwimport.c src/page.c src/pdf.c src/pdfhf.c
-HEADERS := src/cw.h src/laypriv.h src/cbpriv.h src/pdfw.h
+# stage 4 (W49-W54): .docx and .odt opened and exported
+OFFICE  := src/ozip.c src/oxml.c src/oemit.c src/odocx.c src/oodt.c src/oexp.c src/oparts.c
+HEADERS := src/cw.h src/laypriv.h src/cbpriv.h src/pdfw.h src/office.h src/oimp.h src/oxnames.h src/ohelp.c src/oparts.h
 
 HOSTFLAGS := -std=c99 -Wall -Wextra -Wno-unused-parameter -g -O1 -DCW_HOST
 
 .PHONY: all test host clean veranda veranda-test
 all: test
 
-$(HOSTDIR)/test_cw: $(CORE) src/hf.c src/v/pages.c tests/test_main.c tests/host.c tests/host.h $(HEADERS)
+$(HOSTDIR)/test_cw: $(CORE) $(OFFICE) src/hf.c src/v/pages.c tests/test_main.c tests/test_office.c tests/host.c tests/host.h $(HEADERS)
 	@mkdir -p $(HOSTDIR)
-	$(CC) $(HOSTFLAGS) -o $@ $(CORE) src/hf.c src/v/pages.c tests/test_main.c tests/host.c
+	$(CC) $(HOSTFLAGS) -o $@ $(CORE) $(OFFICE) src/hf.c src/v/pages.c tests/test_main.c tests/host.c
+
+# the names the readers know, hashed (tools/oxnames.py); the exporter's
+# XML text, its templates compressed (tools/oparts.py: a minute)
+src/oxnames.h: tools/oxnames.py
+	python3 -I -B tools/oxnames.py $@
+src/oparts.h: tools/oparts.py
+	python3 -I -B tools/oparts.py $@
 
 host: $(HOSTDIR)/test_cw
 test: $(HOSTDIR)/test_cw
 	$(HOSTDIR)/test_cw
 	@python3 -I -B tools/check_pdf.py $(HOSTDIR)
+	@python3 -I -B tools/office_fix.py $(HOSTDIR)/office
+	@python3 -I -B tools/check_office.py $(HOSTDIR)/test_cw $(HOSTDIR)/office
+	@python3 -I -B tools/check_docx.py --test-cw $(HOSTDIR)/test_cw $(HOSTDIR)/rt.docx $(HOSTDIR)/rt.odt \
+	    $(HOSTDIR)/empty.docx $(HOSTDIR)/empty.odt
 
 # ---- Veranda -------------------------------------------------------
 # The X16 build against Veranda's installed SDK, as the package builds the
@@ -61,6 +74,9 @@ $(1)/sdk/scrapio.o $(1)/sdk/scraptbeg.o: $(1)/sdk/%.o: $(SDK)/src/%.c $(SDK)/inc
 $(1)/hf14.o: src/hf.c $(V_HDRS) Makefile
 	@mkdir -p $$(dir $$@)
 	$$(VCC) $(2) --code-name OVERLAY14 --rodata-name OVL14RO --bss-name OVL14BSS --data-name OVL14DATA -c -o $$@ $$<
+$(1)/v/ohash19.o $(1)/v/ohash20.o: $(1)/v/ohash%.o: src/v/ohash.s Makefile
+	@mkdir -p $$(dir $$@)
+	$$(VCC) --asm-define OVL=$$* -c -o $$@ $$<
 $(1)/sdk/vrcs.o: $(SDK)/src/vrcs.s Makefile
 	@mkdir -p $$(dir $$@)
 	$$(VCC) --asm-define VRCS_OVL=10 -c -o $$@ $$<
@@ -76,8 +92,8 @@ endef
 $(eval $(call vr_objs,$(VDIR),))
 $(eval $(call vr_objs,$(VDIR)/test,-DCW_TEST))
 
-V_OBJ   = $(patsubst src/%.c,$(1)/%.o,$(V_MAIN) src/v/ui.c src/v/files.c src/v/clip.c src/v/tools.c src/v/findui.c src/v/fcache.c src/v/view2.c src/v/pages.c src/v/swapio.c src/v/latinui.c src/v/popup.c src/v/tbar.c src/v/sbar.c src/v/ruler.c src/v/status.c src/v/pgview.c src/v/pgpanel.c src/v/pdfx.c) $(1)/hf14.o \
-          $(1)/v/wrscan.s.o $(1)/v/pdfnum.s.o $(1)/v/ltab.s.o $(1)/v/latin.s.o $(1)/v/cbread.s.o $(1)/v/ldfilt.s.o $(1)/v/glue.s.o $(1)/v/fscan.s.o $(1)/v/render.s.o $(1)/sdk/scrapio.o $(1)/sdk/scraptbeg.o $(1)/sdk/vrchoose.o $(1)/sdk/vrwin.o $(1)/sdk/vrcs.o
+V_OBJ   = $(patsubst src/%.c,$(1)/%.o,$(V_MAIN) $(OFFICE) src/v/oxnote.c src/v/ui.c src/v/files.c src/v/clip.c src/v/tools.c src/v/findui.c src/v/fcache.c src/v/view2.c src/v/pages.c src/v/swapio.c src/v/latinui.c src/v/popup.c src/v/tbar.c src/v/sbar.c src/v/ruler.c src/v/status.c src/v/pgview.c src/v/pgpanel.c src/v/pdfx.c) $(1)/hf14.o \
+          $(1)/v/owin.s.o $(1)/v/ocrc.s.o $(1)/v/oparts.s.o $(1)/v/ohash19.o $(1)/v/ohash20.o $(1)/v/wrscan.s.o $(1)/v/pdfnum.s.o $(1)/v/ltab.s.o $(1)/v/latin.s.o $(1)/v/cbread.s.o $(1)/v/ldfilt.s.o $(1)/v/glue.s.o $(1)/v/fscan.s.o $(1)/v/render.s.o $(1)/sdk/scrapio.o $(1)/sdk/scraptbeg.o $(1)/sdk/vrchoose.o $(1)/sdk/vrwin.o $(1)/sdk/vrcs.o
 
 # link $(1) into $(2)/cw.bin (and .1 .. .n: the overlays $(3)), pack
 # "$(2)/Veranda Write.cvt", show the sizes
@@ -90,9 +106,12 @@ define vr_link
 	@python3 -I -B tools/sizes.py $(2)/cw.map $(2)/cw.bin $(3)
 endef
 
+# the overlays (the test build's last: TOVL, src/v/cwv.h)
+V_OVLS  := 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22
+V_TOVL  := 23
 veranda: $(VDIR)/packed
 $(VDIR)/packed: $(call V_OBJ,$(VDIR)) cfg/app.hdr cfg/icon.pbm cfg/tile.txt
-	$(call vr_link,$(call V_OBJ,$(VDIR)),$(VDIR),1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
+	$(call vr_link,$(call V_OBJ,$(VDIR)),$(VDIR),$(V_OVLS))
 	@touch $@
 
 V_TOBJ  = $(call V_OBJ,$(VDIR)/test) $(VDIR)/test/v/test.o $(VDIR)/test/play.o
@@ -101,7 +120,7 @@ $(VDIR)/test/play.o: tools/play.s
 	$(VCC) -c -o $@ $<
 veranda-test: $(VDIR)/test/packed
 $(VDIR)/test/packed: $(V_TOBJ) cfg/app.hdr cfg/icon.pbm cfg/tile.txt
-	$(call vr_link,$(V_TOBJ),$(VDIR)/test,1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17)
+	$(call vr_link,$(V_TOBJ),$(VDIR)/test,$(V_OVLS) $(V_TOVL))
 	@touch $@
 
 clean:

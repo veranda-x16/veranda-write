@@ -24,4 +24,4 @@ unsigned char sz_n, sz_list[10];
 unsigned char menu_choice;
 unsigned char t_arg;
 /* where each list's items start in tools.c's names and ui.c's routines */
-const unsigned char mfirst[8] = { 0, 2, 10, 20, 23, 29, 36, 46 };
+const unsigned char mfirst[8] = { 0, 2, 12, 22, 25, 31, 38, 48 };

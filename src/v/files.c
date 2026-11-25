@@ -21,6 +21,7 @@
 #include <vrpath.h>
 #include "cwv.h"
 #include "view.h"
+#include "../office.h"
 #pragma code-name ("OVERLAY2")
 #pragma rodata-name ("OVL2RO")         /* (its strings: copied before the kernel sees them) */
 
@@ -101,6 +102,7 @@ static unsigned char load(const char *name)
 {
     static unsigned char kind, e;
     static unsigned int n;
+    static char *p;
     strncpy(nm, name, 63);
     nm[63] = 0;
     fh = FOpen(nm, 'r');
@@ -116,6 +118,8 @@ static unsigned char load(const char *name)
     }
     n = FRead(fh, iobuf, 508);
     kind = n >= 4 && !memcmp(iobuf, CW_MAGIC, 4) ? 1 : n == 508 ? gw_check(iobuf) << 1 : 0;
+    if (!kind && n >= 4 && !memcmp(iobuf, "PK\3\4", 4))
+        kind = 6;                       /* (a ZIP: a .docx or an .odt, W49) */
     FClose(fh);
     if (kind == 2) {
         message("Veranda Write cannot open this GEOS file:", nm);
@@ -131,6 +135,8 @@ static unsigned char load(const char *name)
     fmt_cursor = 0;
     if (kind == 4)
         e = gw_load(fh);
+    else if (kind == 6)
+        e = ox_load(fh);
     else {
         e = kind ? fmt_begin(rd) : fmt_tbegin(rd);
         if (!e && ld_kind)
@@ -146,11 +152,10 @@ static unsigned char load(const char *name)
     strcpy(docname, nm);
     if (kind != 1)
         docname[0] = 0;                 /* (saved as a document by Save as) */
-    if (kind == 4) {
-        /* Untitled-name: Save as offers name.cwr */
-        n = strlen(nm);
-        if (n > 4 && nm[n - 4] == '.' && (nm[n - 1] | 0x20) == 't')
-            nm[n - 4] = 0;              /* (.cvt: what gw_check took is a GEOS file) */
+    if (kind >= 4) {
+        /* Untitled-name: Save as offers name.cwr (W27, W51) */
+        if ((p = strrchr(nm, '.')) != 0)
+            *p = 0;                     /* (.cvt, .docx, .odt) */
         nm[50] = 0;
         strcpy(docname + 1, nm);
     }
@@ -160,6 +165,8 @@ static unsigned char load(const char *name)
     ui_moved();
     if (kind == 4)
         gw_note();
+    else if (kind == 6)
+        ox_note();
     else if (!ld_kind)
         l1_note();                      /* (W38: letters not in the set, said) */
     return 0;

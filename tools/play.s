@@ -66,7 +66,7 @@ KBDBUF_PEEK = $FEBD
 .segment "DATA"
 
 _play_bank: .byte 0
-cur:	.word $AC00             ; (the session: in overlay 17's bank, after its code)
+cur:	.word $B000             ; (the session: in the test overlay's bank, after its code)
 wait:	.byte 60
 px:	.word 320
 py:	.word 240

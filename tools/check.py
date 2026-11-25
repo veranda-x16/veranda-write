@@ -13,7 +13,8 @@ counted, the files' PAGE chunks and page breaks, the PDFs it wrote
 (tools/check_pdf.py: their structure, pages, paper and text), the ones it
 must not have left, the PDF's page that starts where Go to page went; the cursor's blink (W42, tools/check_blink.py:
 32 frames shown, 20 hidden, the main loop fast and slowed); the timings (CW TIME, TIME) printed in
-seconds at 8 MHz. --partial: a session stopped early (only what it got
+seconds at 8 MHz; (W55) each redraw check (the text area as the edits
+drew it against a full drawing). --partial: a session stopped early (only what it got
 to).
 
 Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE)."""
@@ -26,6 +27,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cwrd  # noqa: E402
 import check_blink  # noqa: E402
+import check_docx  # noqa: E402
 import check_pdf  # noqa: E402
 
 MHZ = 8e6
@@ -98,7 +100,7 @@ def main():
               % (n, g['chars'], g['lines'], g['pages'], g['sum'], g['psum'], g['modified'], g['banks'], g['free'],
                  g['name']))
     if not partial and exp.get('SESSION') != 'speed':
-        for marker in ('CW ASIDE', 'CW DESK RESUME', 'CW BACK') if exp.get('SESSION') != 'page' else ():
+        for marker in ('CW ASIDE', 'CW DESK RESUME', 'CW BACK') if exp.get('SESSION') not in ('page', 'office', 'redraw') else ():
             if marker not in con:
                 bad.append('no "%s" (Alt+Tab)' % marker)
         for name, want in exp['files'].items():
@@ -155,6 +157,58 @@ def main():
                                   on=want.get('on', []), off=want.get('off', []))
         bad += b
         print('pdf %s (%d bytes)' % (said, os.path.getsize(p)))
+    # stage 4: the exported .docx and .odt files: as other programs read
+    # them (tools/check_docx.py), and read back on the host: the document
+    # the program had (its state's sums), the page setup
+    tc = os.environ.get('TEST_CW', 'build/host/test_cw')
+    for want in exp.get('office', []) if not partial else []:
+        p = os.path.join(run, want['path'])
+        if not os.path.exists(p):
+            bad.append('no %s' % want['path'])
+            continue
+        b, said = check_docx.check(p, tc)
+        bad += b
+        out = p + '.cwr'
+        r = check_pdf.subprocess.run([tc, 'ox', p, out], capture_output=True, text=True)
+        g = got.get(want['state'])
+        if r.returncode:
+            bad.append('%s: not read back: %s' % (want['path'], r.stdout.strip()))
+        elif g:
+            d = cwrd.read(out)
+            ch = d.chars()
+            if cwrd.doc_sum(ch) != g['sum'] or len(ch) != g['chars'] or cwrd.par_sum(d.paras()) != g['psum']:
+                bad.append('%s read back: %d characters, sum %08X, paragraphs %08X; the program had %d, %08X, %08X'
+                           % (want['path'], len(ch), cwrd.doc_sum(ch), cwrd.par_sum(d.paras()), g['chars'], g['sum'],
+                              g['psum']))
+            if want.get('page') and d.page != want['page']:
+                bad.append('%s read back: PAGE %r, want %r' % (want['path'], d.page, want['page']))
+        print('office ' + said + (' (read back: the same document)' if not b else ''))
+    # the header's and footer's parts as drawn ("CW HF x w right text",
+    # src/v/pgview.c): each inside the text's width; the date whole
+    hf = [(int(m.group(1), 16), int(m.group(2), 16), int(m.group(3), 16),
+           m.group(4).rstrip().encode('latin-1').decode('iso8859_16'))
+          for m in re.finditer(r'CW HF ([0-9A-F]{4}) ([0-9A-F]{4}) ([0-9A-F]{4}) ([^\n]*)', con)]
+    for x, w, r, t in hf:
+        if x < 64 or x + w > r:
+            bad.append('a header or footer part drawn at %d..%d, the text %d..%d: %r' % (x, x + w, 64, r, t))
+    if exp.get('hfdate') and not partial:
+        if not any(re.fullmatch(r'\d{1,2} [A-Z][a-z]+ \d{4}', t) for _, _, _, t in hf):
+            bad.append('no header part with the whole date ("1 January 2000"): %r' % sorted({t for *_, t in hf}))
+    if hf:
+        print('header and footer: %d parts drawn, all inside the text (%s)' % (len(hf), ', '.join(sorted({t for *_, t in hf}))[:120]))
+    # (W55) the partial redraw against a full one ("CW REDRAW n rows first
+    # last", src/v/test.c): no row of the text area different
+    rd = {int(m.group(1), 16): (int(m.group(2), 16), int(m.group(3), 16), int(m.group(4), 16))
+          for m in re.finditer(r'CW REDRAW ([0-9A-F]{8}) ([0-9A-F]{8}) ([0-9A-F]{8}) ([0-9A-F]{8})', con)}
+    for k, (r, y0, y1) in sorted(rd.items()):
+        if r:
+            bad.append('redraw check %d: %d rows of the text area not as a full drawing draws them (y %d..%d)'
+                       % (k, r, y0, y1))
+    for k in exp.get('redraws', []) if not partial else []:
+        if k not in rd:
+            bad.append('redraw check %d: not logged' % k)
+    if rd:
+        print('redraw checks: %d, %d with rows not as a full drawing\'s' % (len(rd), sum(1 for v in rd.values() if v[0])))
     for a in exp.get('absent', []) if not partial else []:
         if os.path.exists(os.path.join(run, a)):
             bad.append('%s: still there' % a)
@@ -195,7 +249,11 @@ def main():
                                      'f': 'find MIDDLEMARK from the start' if big else 'find in BIG.cwr (not found)',
                                      'r': 'replace all in BIG.cwr', 'e': 'Ctrl+End', 'h': 'Ctrl+Home',
                                      'g': 'go to page 60', 'm': 'open BIG2.cwr again',
-                                     'p': 'export XBIG.cwr as PDF'}.get(m.group(1), m.group(1)),
+                                     'p': 'export XBIG.cwr as PDF',
+                                     'd': 'open Report.docx (converted)', 'o': 'open Notes.odt (converted)',
+                                     'b': 'open Big report.docx (converted)', 'w': 'export Report as .docx',
+                                     'v': 'export Report as .odt', 'x': 'export Big report as .docx',
+                                     'y': 'export Big report as .odt'}.get(m.group(1), m.group(1)),
                                     int(m.group(2), 16) / MHZ))
     lat(con, exp.get('labels', {}))
     for n, want in exp.get('lossy', {}).items():

@@ -71,6 +71,8 @@ void t_status(void)
     pg_arg = lf_i;
     col = chars_to(lf_pos, cur);        /* the column: characters from the line's start */
     pg_at();
+    if (hf_np && hf_tot != pg_tot)
+        need_view = 1;                  /* (W55: the bands' {pages} drawn again: v_refresh) */
     p = put_s(p, pg_est & 1 ? "Page ~" : "Page ");
     p = put_u(p, pg_pc);
     p = put_s(p, pg_est & 2 ? " of ~" : " of ");

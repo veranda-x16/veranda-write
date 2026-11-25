@@ -19,7 +19,8 @@
 static const char *const names[][2] = {
     { "About Veranda Write", "" }, { "\x1fWord count...", "" },
     { "New", "Ctrl N" }, { "Open...", "Ctrl O" }, { "\x1fSave", "Ctrl S" }, { "Save as...", "Ctrl Shift S" },
-    { "\x1fPage setup...", "" }, { "Export as PDF...", "Ctrl Shift P" },
+    { "\x1fPage setup...", "" }, { "Export as PDF...", "Ctrl Shift P" }, { "Export as Word (.docx)...", "" },
+    { "Export as OpenDocument (.odt)...", "" },
     { "\x1f" "Close", "Ctrl W" }, { "Quit", "Ctrl Q" },
     { "Undo", "Ctrl Z" }, { "Redo", "Ctrl Y" }, { "\x1f" "Cut", "Ctrl X" }, { "Copy", "Ctrl C" },
     { "Paste", "Ctrl V" }, { "Select all", "Ctrl A" }, { "\x1f" "Find...", "Ctrl F" }, { "Find next", "Ctrl G" },

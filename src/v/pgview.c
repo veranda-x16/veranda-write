@@ -44,13 +44,6 @@ extern char run[100];                   /* (view.c: main RAM, what the kernel dr
 static char nm[64];                     /* {name} */
 static void t_band(void);
 
-static void __fastcall__ text(const char *s, unsigned int x, unsigned int y)
-{
-    strncpy(run, s, sizeof run - 1);
-    run[sizeof run - 1] = 0;
-    WPutString(run, x, y);
-}
-
 static unsigned int __fastcall__ width(const char *s)
 {
     unsigned int w = 0;
@@ -68,6 +61,16 @@ void pg_name(void)
     if (p && strlen(p) <= 4)
         *p = 0;
     hf_name = nm;
+}
+
+/* (File > Export as Word, OpenDocument: pgpanel.c's, through callb)
+   {date} at iobuf, {name} at iobuf + 32: oexp.c's (another overlay) */
+void pg_export(void)
+{
+    pg_name();
+    hf_today();
+    strcpy((char *)iobuf, hf_date);
+    strcpy((char *)iobuf + 32, nm);
 }
 
 /* row i is a page break's paragraph (LF_PB: draw_row, through glue.s):
@@ -162,7 +165,6 @@ void e_rows_build(void)
    there down, as this left them (0xFFFF: not known; v_all and every
    ScrollRect forget it): a key typed at a short document's end cleared
    the half screen under it again (W43: 0.055 s) */
-static unsigned int clr_pg;
 
 void e_clear_below(void)
 {
@@ -189,31 +191,162 @@ void e_clear_below(void)
 /*---------------------------------------------------------------
   the bands between the pages
  ---------------------------------------------------------------*/
+/*---------------------------------------------------------------
+  the header's and footer's text in Gate Sans 12, the document's font
+  (its glyphs $A0-$FF: Polish), drawn by Write's own renderer (render.s)
+  in a band of BAND_HF rows; the kernel's UI font (no glyphs above $7F)
+  only when the document has no plain Gate Sans 12 style to draw with
+ ---------------------------------------------------------------*/
+/* a plain Gate Sans 12 style of the document, made the renderer's: 1
+   (fl_w its widths), 0 none (the cache could not take it: the kernel's) */
+static unsigned char hf_font(void)
+{
+    static unsigned char k;
+    for (k = 0; k < nsty; ++k)
+        if (sty[k].size == 12 && !(sty[k].flags & SF_KNOWN) && !strcmp(fontname[sty[k].font], def_font))
+            return !fl_rr(k);
+    return 0;
+}
+
+/* s's width as render.s draws it (CHW: the font's widths, bold's pixel;
+   its argument is read more than once: a variable, not *s++) */
+static unsigned int __fastcall__ hf_w(const char *s)
+{
+    static unsigned int w;
+    static unsigned char c;
+    for (w = 0; (c = (unsigned char)*s) != 0; ++s)
+        w += CHW(c);
+    return w;
+}
+
+/* run cut (at a character) to at most m pixels: its width */
+static unsigned int __fastcall__ hf_fit(unsigned int m)
+{
+    static unsigned int w;
+    static unsigned char n;
+    w = hf_w(run);
+    for (n = (unsigned char)strlen(run); w > m && n; ) {
+        --n;
+        w -= CHW((unsigned char)run[n]);
+        run[n] = 0;
+    }
+    return w;
+}
+
+/* the band at y cleared, its row buffer ready (hf_font first) */
+static void __fastcall__ hf_band(unsigned int y)
+{
+    rr_bt = 0;
+    rr_bh = BAND_HF;
+    rr_clear();
+    rr_y = y;
+    rr_lh = BAND_HF;
+}
+
+/* s (main RAM) at x, its baseline 10 rows into the band (lower when the
+   font's ascent is more) */
+static void __fastcall__ hf_put(const char *s, unsigned int x)
+{
+    rr_s = s;
+    rr_n = (unsigned char)strlen(s);
+    rr_x = x - PG_L;
+    rr_top = fl_a > 10 ? 0 : 10 - fl_a;
+    rr_run();
+}
+
+#ifdef CW_TEST
+/* "CW HF x w right text": a part drawn (the gate's check: inside the
+   text's width, all of it) */
+static void __fastcall__ hf_hex(char *p, unsigned int v)
+{
+    static const char hx[] = "0123456789ABCDEF";
+    static unsigned char i;
+    for (i = 4; i--; v >>= 4)
+        p[i] = hx[v & 15];
+    p[4] = ' ';
+}
+
+static void __fastcall__ hf_log(unsigned int x, unsigned int w)
+{
+    static char *p;
+    p = (char *)iobuf;
+    strcpy(p, "CW HF ");
+    hf_hex(p + 6, x);
+    hf_hex(p + 11, w);
+    hf_hex(p + 16, TX0 + wrap_w);
+    strncpy(p + 21, run, 80);
+    p[101] = 0;
+    LogText(iobuf);
+}
+#endif
+
 /* the header or footer s of page pg, its baseline at y + 10, inside the
    text's width (only when all of its line is on the screen) */
 static void __fastcall__ hf_line(const char *s, unsigned int pg, unsigned int y)
 {
-    static unsigned char k;
+    static unsigned char k, own;
     static unsigned int w, x;
     if (y < TA_TOP || y + BAND_HF - 1 > TA_BOT)
         return;
     hf_make(s, pg, pg_tot > pg ? pg_tot : pg);
-    UseFont(FONT_UI);
-    currentMode = 0;
+    own = hf_font();
+    if (own)
+        hf_band(y);
+    else {
+        UseFont(FONT_UI);
+        currentMode = 0;
+    }
     for (k = 0; k < 3; ++k) {
         if (!hf_part[k][0])
             continue;
-        w = width(hf_part[k]);
+        strncpy(run, hf_part[k], sizeof run - 1);   /* (main RAM: the renderer's, the kernel's) */
+        run[sizeof run - 1] = 0;
+        w = own ? hf_fit(wrap_w) : width(run);   /* (longer than the text's width: cut) */
         x = TX0;
-        if (k == 1)
-            x += (wrap_w - w) >> 1;
-        else if (k == 2)
-            x += wrap_w - w;
-        if (w > wrap_w)
-            x = TX0;
-        text(hf_part[k], x, y + 10);
+        if (w <= wrap_w) {
+            if (k == 1)
+                x += (wrap_w - w) >> 1;
+            else if (k == 2)
+                x += wrap_w - w;
+        }
+        if (own)
+            hf_put(run, x);
+        else
+            WPutString(run, x, y + 10);
+#ifdef CW_TEST
+        hf_log(x, w);
+#endif
     }
-    UseFont(0);
+    if (own) {
+        rr_ylo = TA_TOP;
+        rr_yhi = TA_BOT;
+        rr_blit();
+        dispBufferOn = ST_WR_FORE | ST_WR_BACK;
+    } else
+        UseFont(0);
+}
+
+/* (pgpanel.c's, through callb: the page setup panel's header or footer
+   field) pf_s's end that fits in pf_w pixels drawn at pf_x in the band
+   at pf_y (its rows across the page blanked first), pf_w then its width;
+   pf_ok 0: no font of the document's to draw with (the panel draws it) */
+void pg_field(void)
+{
+    const char *t = pf_s;
+    pf_ok = hf_font();
+    if (!pf_ok)
+        return;
+    while (hf_w(t) > pf_w)
+        ++t;
+    strncpy(run, t, sizeof run - 1);
+    run[sizeof run - 1] = 0;
+    hf_band(pf_y);
+    hf_put(run, pf_x);
+    rr_ylo = pf_y;
+    rr_yhi = pf_y + BAND_HF - 1;
+    rr_blit();
+    dispBufferOn = ST_WR_FORE | ST_WR_BACK;
+    pf_w = hf_w(run);
 }
 
 /* the band of row i: y - g .. y - 1 */

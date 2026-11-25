@@ -14,6 +14,7 @@
 .importzp ptr1
 
 .import _bank2, _bank4, _bank5, _bank6, _bank7, _bank8, _bank10, _bank11, _bank12, _bank13, _bank14, _bank15
+.import _bank17, _bank18, _bank19, _bank20, _bank21, _bank22
 
 .macro FAR name, target, bank
 .export name
@@ -217,3 +218,50 @@ FAR _v_pbreak, _e_v_pbreak, _bank14
 FAR _f_pdf_hf, _e_pdf_hf, _bank14
 FAR _pg_view, _e_pg_view, _bank13
 FAR _pdf_write, _e_pdf_write, _bank15
+; overlay 17: a ZIP's parts, inflated, and their tokens (ozip.c, oxml.c);
+; 18: the text put into the document, the styles (oemit.c), the note (v/oxnote.c)
+; (stage 4, W49-W51)
+FAR _oz_open, _e_oz_open, _bank17
+FAR _oz_part, _e_oz_part, _bank17
+FAR _oz_read, _e_oz_read, _bank17
+FAR _oz_close, _e_oz_close, _bank17
+FAR _xm_init, _e_xm_init, _bank17
+FAR _xm_next, _e_xm_next, _bank17
+FAR _ox_note, _e_ox_note, _bank18
+FAR _ox_load, _e_ox_load, _bank18
+FAR _em_init, _e_em_init, _bank18
+FAR _em_done, _e_em_done, _bank18
+FAR _em_par, _e_em_par, _bank18
+FAR _em_need, _e_em_need, _bank18
+FAR _em_endpar, _e_em_endpar, _bank18
+FAR _em_split, _e_em_split, _bank18
+FAR _em_pbreak, _e_em_pbreak, _bank18
+FAR _em_run, _e_em_run, _bank18
+FAR _em_chars, _e_em_chars, _bank18
+FAR _em_char, _e_em_char, _bank18
+FAR _em_spaces, _e_em_spaces, _bank18
+FAR _em_field, _e_em_field, _bank18
+FAR _em_hfbegin, _e_em_hfbegin, _bank18
+FAR _em_hfend, _e_em_hfend, _bank18
+FAR _em_finish, _e_em_finish, _bank18
+FAR _em_page, _e_em_page, _bank18
+FAR _pr_set, _e_pr_set, _bank18
+FAR _pr_pct, _e_pr_pct, _bank18
+FAR _pr_clr, _e_pr_clr, _bank18
+FAR _st_find, _e_st_find, _bank18
+FAR _st_new, _e_st_new, _bank18
+FAR _st_base, _e_st_base, _bank18
+FAR _st_auto, _e_st_auto, _bank18
+FAR _em_pstyle, _e_em_pstyle, _bank18
+FAR _em_mp, _e_em_mp, _bank18
+FAR _em_span, _e_em_span, _bank18
+FAR _em_unspan, _e_em_unspan, _bank18
+; overlay 19: the .docx reader (odocx.c); 20: the .odt reader (oodt.c)
+FAR _dx_load, _e_dx_load, _bank19
+FAR _od_load, _e_od_load, _bank20
+FAR _f_cs_uni, _cs_uni, _bank10         ; (the SDK's vrcs.s in overlay 10)
+; overlay 21: the document as a .docx or an .odt (oexp.c); 22: their
+; XML's templates (oparts.c) (stage 4, W52)
+FAR _oe_write, _e_oe_write, _bank21
+FAR _op_open, _e_op_open, _bank22
+FAR _op_next, _e_op_next, _bank22

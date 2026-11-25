@@ -272,6 +272,13 @@ void __fastcall__ draw_row(unsigned char i)
 /* (view2.c's clear_below: the paper under the last row; clr_y: the
    screens are the paper from there down, 0xFFFF not known) */
 unsigned int clr_y = 0xFFFF;
+unsigned int clr_pg;                    /* (its page: the footer under the last line) */
+/* (W55) the bands' {pages}: hf_np, one drawn since v_all (hf.c sets
+   it, v_all clears it), hf_tot the count v_all drew with; when the
+   status bar's count is another, v_refresh draws all again (a footer's
+   "Page 2 of 2" when there are 3) */
+unsigned char hf_np;
+unsigned int hf_tot;
 
 /*---------------------------------------------------------------
   the cursor
@@ -287,6 +294,7 @@ void view_cursor(unsigned char on)
 {
     unsigned int L;
     unsigned char i;
+    static unsigned char a, d;
     if (cur_on) {
         clip(1);
         cursor_xor();
@@ -302,14 +310,17 @@ void view_cursor(unsigned char on)
     i = (unsigned char)(L - top_line);
     if (cc_cur == cur && cc_pos == vr[i].pos) {
         cx = cc_x;                      /* (draw_row found it) */
-        fl_a = cc_a;
-        fl_d = cc_d;
-    } else
+        a = cc_a;                       /* (W55: not into fl_a and fl_d, which */
+        d = cc_d;                       /*   are fl_last's: word wrap read them) */
+    } else {
         cx = walk(vr[i].pos, &vr[i].l, 0, cur);
+        a = fl_a;                       /* (walk: the style at the cursor) */
+        d = fl_d;
+    }
     if (cx > PG_R - 2)
         cx = PG_R - 2;
-    cy = vr[i].y + vr[i].l.a - fl_a;    /* (walk: the style at the cursor) */
-    ch = fl_a + fl_d;
+    cy = vr[i].y + vr[i].l.a - a;
+    ch = a + d;
     if (cy + ch - 1 > TA_BOT)
         return;
     clip(1);

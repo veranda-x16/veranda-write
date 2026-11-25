@@ -22,10 +22,12 @@ def main():
     bad = end > top
     for n in ovl:
         s = os.path.getsize('%s.%s' % (binp, n))
-        print('overlay %s: %d bytes (%d free)' % (n, s, 8191 - s))
-        bad |= s > 8191
-        if n == '17' and s > 3072:
-            print('overlay 17: over 3 KB: the session goes at $AC00 in its bank (src/v/test.c)')
+        m = re.search(r'^OVL%sBSS\s+[0-9A-F]{6}\s+[0-9A-F]{6}\s+([0-9A-F]{6})' % n, text, re.M)
+        b = int(m.group(1), 16) if m else 0
+        print('overlay %s: %d bytes and %d of variables (%d free)' % (n, s, b, 8191 - s - b))
+        bad |= s + b > 8191
+        if n == ovl[-1] and 'test' in binp and s + b > 4096:
+            print('overlay %s: over 4 KB: the session goes at $B000 in its bank (src/v/test.c)' % n)
             bad = True
     if bad:
         sys.exit('sizes: too big')
