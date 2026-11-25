@@ -170,10 +170,11 @@ def text(d):
     return ''.join(out)
 
 
-def write(path, chars, fonts=None, paras=None, minor=1, breaks=(), page=None):
+def write(path, chars, fonts=None, paras=None, minor=1, breaks=(), page=None, lang=0):
     """a document of chars ((c, font, size, flags)...), a style code
     wherever the style changes; paras: each paragraph's style (a code at
-    the start of each that is not Body); minor 0: a 1.0 file (no PARA)"""
+    the start of each that is not Body); minor 0: a 1.0 file (no PARA);
+    lang (1.5, W57): the spelling language, 1 English, 2 Polish"""
     fonts = list(fonts or [])
     styles = []
     text = bytearray()
@@ -221,7 +222,7 @@ def write(path, chars, fonts=None, paras=None, minor=1, breaks=(), page=None):
 
     def chunk(tag, body):
         out.extend(tag + struct.pack('<I', len(body)) + body)
-    chunk(b'INFO', struct.pack('<IHBB', 0, 520, 1 if minor >= 3 else 0, 0))   # (1.3: the set, W38)
+    chunk(b'INFO', struct.pack('<IHBB', 0, 520, 1 if minor >= 3 else 0, lang))   # (1.3: the set, W38; 1.5: the language)
     fb = bytes([len(fonts)]) + b''.join(bytes([len(f)]) + f.encode('latin-1') for f in fonts)
     chunk(b'FONT', fb)
     chunk(b'STYL', bytes([len(styles)]) + b''.join(bytes(s) for s in styles))

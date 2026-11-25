@@ -30,16 +30,18 @@ static char sw_name[64] = { 0 };        /* a slot's file's path, or the document
 static char dc_dir[64] = { 0 }, dc_name[64] = { 0 };   /* the document's folder and name */
 
 #pragma code-name (push, "CODE")
-/* n bytes between file h and bank b's $A000 (w: write); the bytes moved */
+/* n bytes between file h and bank b's sw_xa ($A000 but for spelling's
+   reads, v/spio.c, W56) (w: write); the bytes moved */
+void *sw_xa = (void *)0xA000;
 unsigned int __fastcall__ sw_xfer(unsigned char h, unsigned char b, unsigned int n, unsigned char w)
 {
     unsigned char keep = *(volatile unsigned char *)0;
     unsigned int k;
     MAPBANK(b);
     if (w)
-        k = FWrite(h, (void *)0xA000, n) ? 0 : n;
+        k = FWrite(h, sw_xa, n) ? 0 : n;
     else
-        k = FRead(h, (void *)0xA000, n);
+        k = FRead(h, sw_xa, n);
     MAPBANK(keep);
     return k;
 }

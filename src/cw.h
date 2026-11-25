@@ -71,6 +71,9 @@ unsigned char sw_take_lo(void);         /* sw_take, a bank of the first runs */
 /* the platform's */
 unsigned char FASTCALL plat_bank_run(unsigned char n);  /* n banks in a row: the first, 0 none */
 void FASTCALL plat_bank_free(unsigned char b);          /* the run starting at b */
+/* (W59) banks the platform can give back to the pool before a chunk is
+   put out to the card for one (the spelling dictionary's cache): 1 some */
+unsigned char plat_spare(void);
 
 /*---------------------------------------------------------------
   cbuf.c, cbufx.c: a byte stream in RAM banks, a chunk a bank;
@@ -475,7 +478,7 @@ extern unsigned char fl_bold, fl_a, fl_d;
  ---------------------------------------------------------------*/
 #define CW_MAGIC "CWRD"
 #define CW_MAJOR 1
-#define CW_MINOR 4                      /* (1.3: INFO's charset byte, W38; 1.4: PAGE, W44) */
+#define CW_MINOR 5                      /* (1.3: INFO's charset byte, W38; 1.4: PAGE, W44; 1.5: INFO's language, W57) */
 #define CS_LATIN1  0                    /* INFO byte 6: the text's set: Latin-1 (1.0-1.2) */
 #define CS_L10     1                    /*   ISO-8859-16, the Veranda set (1.3: Veranda's V135) */
 typedef unsigned char (*cw_wfn)(const void *p, unsigned int n);   /* 0 written */
@@ -513,6 +516,7 @@ void FASTCALL ld_need(pos_t p);
 unsigned char FASTCALL ld_safe(pos_t p);   /* (format.c) an edit up to p needs nothing more */
 extern unsigned int fmt_lost;           /* characters the set has not, made '?' (the last load) */
 extern unsigned char fmt_cs;            /* the last loaded file's set (CS_LATIN1: converted) */
+extern unsigned char fmt_lang;          /* the document's spelling language (1.5: 0 not said, 1 English, 2 Polish) */
 /* Veranda's set (its vrcs.h, V135): code point u's byte, 0 for none (the
    X16: the SDK's vrcs.s in overlay 10, through glue.s; the host: host.c) */
 #ifndef CW_HOST

@@ -17,6 +17,31 @@ still `CmdrWrite`, so documents made before open as they did.
 
 ## Features (stages 1 to 4)
 
+- **Spelling, English and Polish** (W56-W59; docs/SPELLING.md): words
+  the dictionary has not are underlined with a dotted line as you write
+  (looked at when typing pauses, so typing is as quick as without it) and
+  on every screen of a document; **Tools > Check spelling** (F7) goes
+  through the document from the cursor in a panel under the text: the
+  word in its context, up to six suggestions ("ksiazka" → "książka",
+  "zolw" → "żółw", "recieve" → "receive"), Change, Change all, Ignore,
+  Ignore all, Add (to your own words), Close; a right click on a marked
+  word (or F8) opens its suggestions under it. The document's language
+  is kept in it (Tools > English, Polish; a new one is English until
+  Tools > Spelling options says otherwise). The dictionaries are Writer's
+  Polish one (300,000 word forms) and an English one from SCOWL (165,000),
+  in `/VERANDA/DICT`; your own words in `/VERANDA/.SYSTEM/WRITE.UDIC`.
+  The dictionaries are a separate download (1.9 MB, W61): **Tools > Get
+  dictionaries** has Veranda Update fetch them over the Wi-Fi modem, or
+  copy them from `Veranda-Write-dictionaries.zip` (this repository's
+  release `dict-1`, made by `make dict-release`).
+  **Tools > Spelling options** (W60) keeps three settings between runs,
+  in `/VERANDA/.SYSTEM/WRITE.CFG`: check spelling as you work (off: only
+  when you ask with F7, F8 or the Tools menu; nothing is loaded or marked
+  before), mark misspellings as you type (Tools > Mark misspellings
+  changes it too and keeps it at once), and the language of new
+  documents and of those saved without one (English, the default;
+  Polish; or the keyboard's: Polish when Veranda's keyboard setting is).
+
 - **Word and OpenDocument documents open** (stage 4): File > Open lists
   `.docx` and `.odt` files with the documents and converts one when it is
   opened (the original is never written): it opens as *Untitled-name*,
@@ -164,6 +189,8 @@ still `CmdrWrite`, so documents made before open as they did.
 | Ctrl+Return | Insert a page break |
 | Ctrl+Shift+P | Export as PDF |
 | Alt + the same letters | the same |
+| F7 | Check spelling (the panel; F7 again: Ignore) |
+| F8, a right click on a word | its spelling suggestions (a pop-up: a click or 1-7, Esc; the right click only while spelling is checked as you work) |
 | Alt+Tab | put Veranda Write aside (Veranda's switcher) |
 
 In the page setup panel (File > Page setup, Insert > Header and footer):
@@ -172,6 +199,17 @@ Tab and the up and down arrows move between its items, left and right
 an inch a step) or an option, typing edits the header or the footer,
 Return is OK, Esc Cancel; the pointer clicks its buttons, the margins'
 - and +, the fields and the options.
+
+In the spelling options (Tools > Spelling options): Tab and the up and
+down arrows move between its three items, Space and left and right
+change one, Return is OK (the settings kept), Esc Cancel; the pointer
+clicks the boxes, the languages, OK and Cancel.
+
+In the spelling panel: typing edits "Change to", Up and Down put the
+suggestions in it, Return changes the word (Alt+C), Alt+L Change all,
+Alt+I Ignore, Alt+G Ignore all, Alt+A Add, Alt+1 to Alt+6 a suggestion,
+Esc closes it; a click on a suggestion puts it in "Change to", a double
+click changes the word with it.
 
 In the find panel: typing goes to its field, Tab the other field,
 Backspace, Return finds the next, Alt+C Match case, Alt+W Whole word,
@@ -205,6 +243,23 @@ File.
   (one that is not there in Gate Sans); glyphs up to 48 pixels wide and
   fonts up to 48 rows.
 - 128 character styles, 32 paragraph styles and 8 fonts in a document.
+- **Spelling** (W56-W59, docs/SPELLING.md): two languages, English and
+  Polish, a document in one of them (a Polish quotation in an English
+  document is marked). A word is letters (an apostrophe between them
+  too); a hyphenated word is checked as its parts; words with digits, of
+  one letter, or in capitals of up to five letters are not checked.
+  Suggestions are not ordered by how common they are ("wich": "rich"
+  before "which"), take up to 2.5 s at 8 MHz, and are at most eight. The
+  user's words: about 3,000 bytes (some 300 words), the ignored ones
+  about 2,000 (for the session). The marks of the line being typed
+  disappear while you type and come back when you pause. At 8 MHz and
+  512 KB (DECISIONS W59): a word met before 0.4 ms, one from the cache
+  2.5-3 ms, from the card 5-6 ms (a host folder) or about 45 ms (an SD
+  card image); Check spelling through 2,000 words 4-6 s the first time
+  and 1.5-2.3 s again (a host folder), 14-21 s and 2.5-5 s (an SD card
+  image); its suggestions 0.3-1.7 s, at most 2.5 s. Spelling's code
+  (`SPELL.OVL`) and banks are given back before a document is opened
+  or exported and read again when spelling is next wanted.
 - **A document up to 4 MB of text and 65,000 lines** (16-bit line
   numbers; about 50,000 lines of ordinary text in 4 MB), with any amount
   of RAM: what does not fit is on the card, which needs room for it (at
@@ -294,6 +349,18 @@ File.
   not listed (W27). Converting one takes an overlay's RAM bank: the
   largest document at 512 KB is about 8 KB smaller than stage 2's.
 
+## Credits
+
+- The spelling: its dictionary format, lookup, word lists and
+  suggestions are taken over from **Writer**, the author's own earlier
+  word processor for the X16; so is `PL.DIC`, Writer's Polish
+  dictionary, built from **Morfologik 2.1** by Marcin Miłkowski (BSD
+  2-clause) and the **FrequencyWords** Polish list by Hermit Dave (CC
+  BY-SA 4.0): `dict/PL.DIC.txt`. `EN.DIC` is built from **SCOWL**
+  2020.12.07 by Kevin Atkinson and contributors (a permissive licence):
+  `dict/EN.DIC.txt`. Each licence file travels with its dictionary (the
+  release `dict-1` has both, and so has its zip).
+
 ## Building
 
 Veranda Write builds against Veranda's installed SDK, as Veranda's
@@ -309,7 +376,14 @@ You need cc65 (`cl65`, `CC65_HOME`), Python 3, x16emu and the X16 ROM
 (`EMU`, `ROM`; R49 for the SD card run).
 
 Put `Veranda Write.cvt` in `/VERANDA/APPS` on the card; the shell
-opens `.CWR` documents with it.
+opens `.CWR` documents with it. Spelling's code, `SPELL.OVL` (`make
+veranda` puts it in `build/veranda/DICT`), goes in `/VERANDA/DICT`, from
+the same build as the program; the dictionaries (`dict/`: `PL.DIC`,
+`EN.DIC` and their licences) go there too, by hand or with Tools > Get
+dictionaries (docs/SPELLING.md). `make dict-release` makes their GitHub
+release's files in `build/dict-release` and prints the `gh` commands
+that publish them (only you run those; or Actions > Dictionaries).
+`tools/fetch_scowl.sh` rebuilds `EN.DIC` from SCOWL.
 
 ## Tests
 
@@ -414,6 +488,27 @@ opens `.CWR` documents with it.
   into `/DOCUMENTS` (read back on the host: the document the program had;
   `tools/check_docx.py`), a big `.docx` opened and exported (timed);
   screenshots `oxnote`, `oxdoc`, `oxsave`, `oxodt` in `build/shots/`.
+- **Spelling** (`make test`, tests/test_spell.c): words with every Polish
+  letter in lower case, capitalised and in capitals, English
+  contractions and possessives, the text's words (hyphens, digits,
+  abbreviations, apostrophes), the suggestions ("ksiazka" → "książka",
+  "zolw" → "żółw", "lodz" → "łódź", "recieve" → "receive", "teh" →
+  "the", "dont" → "don't"), the user's words (their UTF-8 file) and the
+  ignored ones, 20,000 lookups a language against the dictionary's own
+  words (with a cache of one bank and of four), a 2,000-word text checked
+  twice (the second time from the hash). The gate's `SESSION=spell` (R49,
+  512 KB, a host folder and an SD card image): live marks, Check spelling
+  through a Polish and an English document (Change, Change all, Ignore,
+  Ignore all, Add), the pop-up by a right click and by F8, the Tools menu,
+  Alt+Tab, the files; the lookups and Check spelling over 2,000 words
+  timed; (W60) the settings changed from the Tools menu and the options,
+  the program quit and started again (the session's second part), the
+  settings as they were, no marks and spelling not loaded while typing,
+  Check spelling in the settings' language, `WRITE.CFG`'s bytes;
+  `make test` reads and writes `WRITE.CFG` (missing, short, other and
+  later files); screenshots `splivepl`, `spdlg`, `spdone`, `spliveen`,
+  `sppop`, `splang`, `spopts`, `spnomark` in `build/shots/`. `SESSION=redraw` and the per-key timings
+  run with the dictionaries on the card.
 
 ## The plan
 

@@ -97,6 +97,7 @@ void doc_new(void)
     pgs_default();                      /* (the user's page setup: wrap_w) */
     lay_all();
     doc_modified = 0;
+    fmt_lang = 0;                       /* (W57: the default spelling language until one is chosen) */
 }
 
 /* places kept right across doc_tidy's deletions (the callers' cursor

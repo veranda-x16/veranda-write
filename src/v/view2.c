@@ -8,6 +8,7 @@
 #include <theme.h>
 #include <vrwin.h>
 #include "cwv.h"
+#include "../spell.h"
 #include "view.h"
 #pragma code-name ("OVERLAY5")
 #pragma rodata-name ("OVL5RO")
@@ -45,6 +46,18 @@ void v_title(void)
 
 #pragma bss-name (push, "OVL5BSS")
 static struct vrow ov[VMAX];            /* (the rows before an edit: this overlay's) */
+
+/* the rows made again (pgview.c): their spelling marks not known
+   (W58: v/splive.c's live checking looks at them) */
+static void rows(void)
+{
+    static unsigned char k;
+    rows_build();
+    for (k = 0; k < vn; ++k)
+        vr[k].mk = 0x80;
+    sp_pend = 1;
+}
+
 static pos_t mo[VMAX];                  /* (their places now: moved()) */
 static unsigned char ovn;
 static unsigned char dirty[VMAX];
@@ -162,7 +175,7 @@ void v_all(void)
     view_cursor(0);
     clr_y = 0xFFFF;
     clip(1);
-    rows_build();
+    rows();
     s_lo = SEL_LO();
     s_hi = SEL_HI();
     hf_np = 0;
@@ -222,7 +235,7 @@ void v_scroll(void)
         clr_y = 0xFFFF;
         top_line += n;
         clip(1);
-        rows_build();
+        rows();
         for (k = 0; k < vn; ++k)
             if (vr[k].y + vr[k].l.h - 1 > TA_BOT - dy)
                 draw_row(k);
@@ -243,7 +256,7 @@ void v_scroll(void)
             v_all();
             return;
         }
-        rows_build();                   /* (the bands: the old top row is row m now) */
+        rows();                   /* (the bands: the old top row is row m now) */
         if (m >= vn || (dy = vr[m].y - vr[m].g - TY0) >= TA_BOT - TA_TOP - 16) {
             v_all();
             return;
@@ -347,7 +360,7 @@ void v_refresh(void)
         ovn = vn;
         for (j = 0; j < ovn; ++j)
             mo[j] = moved(ov[j].pos);
-        rows_build();
+        rows();
         memset(dirty, 1, vn);
         PM("rows");
         nmove = 0;
@@ -371,6 +384,7 @@ void v_refresh(void)
                 ++j;
             if (j == ovn || !same(j, i))
                 continue;               /* (new on the screen) */
+            vr[i].mk = ov[j].mk;        /* (W58: its marks as drawn) */
             if (ov[j].y == vr[i].y)
                 dirty[i] = 0;           /* (as it is, cut at the bottom or not) */
             else if (ov[j].y + ov[j].l.h - 1 > TA_BOT)

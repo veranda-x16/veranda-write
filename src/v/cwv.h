@@ -36,7 +36,14 @@
      overlay 20 the .odt reader (oodt.c)
      overlay 21 the document as a .docx or an .odt (oexp.c, ocrc.s)
      overlay 22 the XML text of those, its templates (oparts.c)
-     overlay 23 (test builds) the session's logs
+     overlay 23 spelling: the dictionary, its cache, the hash of results,
+                the word lists, the marks, live checking, Check
+                spelling's search (spell.c, v/splive.c, v/spio.c)
+     overlay 24 spelling's suggestions (sugg.c), its files (v/spio.c)
+     overlay 25 the spelling panel (v/spui.c)
+     overlay 26 the suggestions' pop-up, the Tools menu (v/sppop.c)
+     overlay 27 (test builds) the session's logs: record 23 of the
+                file (23-26 are SPELL.OVL's: v/spload.c)
    callb() runs a function of another overlay and maps the caller's back.
 
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
@@ -87,7 +94,7 @@ extern unsigned int ta_bot;
 
 /* main.c */
 extern unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16;
-extern unsigned char bank17, bank18, bank19, bank20, bank21, bank22, bankt;
+extern unsigned char bank17, bank18, bank19, bank20, bank21, bank22, bank23, bank24, bank25, bank26, bankt;
 #define TOVL 23                         /* the test build's overlay (src/v/test.c) */
 extern unsigned char sw_tbank;
 extern unsigned char cw_idle;           /* the main loop found nothing to do */
@@ -155,7 +162,9 @@ void rr_tables(void), rr_clear(void), rr_run(void), rr_blit(void), rr_dot(void);
 /* a row: its place, its y, its list number, its line's entry; the band
    above it (g pixels: the page before's footer, the gap, the page's
    header, W45) when it starts page pg */
-struct vrow { pos_t pos; unsigned int y, n; struct line l; unsigned char g; unsigned int pg; };
+/* mk (W58, v/splive.c): the spelling marks drawn on it, bit 7 a word
+   on it not looked up yet */
+struct vrow { pos_t pos; unsigned int y, n; struct line l; unsigned char g; unsigned int pg; unsigned char mk; };
 extern struct vrow vr[VMAX];
 extern unsigned char vn;                /* rows shown */
 extern unsigned int top_line;
@@ -226,7 +235,7 @@ void __fastcall__ sw_dclose(unsigned char h);
 
 /* menus.c (main RAM: the tables) */
 #define MI 12                           /* a list's items at most */
-#define NBAR 9                          /* the bar's: Veranda Write, File, Edit, Insert, Text, Style, Format, Font, Size */
+#define NBAR 10                         /* the bar's: Veranda Write, File, Edit, Insert, Text, Style, Format, Font, Size, Tools */
 struct mitem { const char *text; unsigned char type; void *p; };
 struct menu { unsigned char top, bottom; unsigned int left, right; unsigned char flags; struct mitem i[MI]; };
 extern struct menu mbar, msub;
@@ -284,12 +293,25 @@ extern unsigned int pf_x, pf_y, pf_w;
 extern unsigned char pf_ok;
 void pg_field(void);
 
+/* spui.c (overlay 25, W57): the spelling panel (under the text from
+   y 336), the suggestions' pop-up (t_arg 1: the word at r11, r12), the
+   Tools menu's item t_arg */
+void spp_open(void), spp_close(void), spp_key(void), spp_press(void), sp_pop(void), t_tools(void);
+void sp_fkey(void), sp_tick(void);
+/* spopt.c (overlay 24, W60): Tools > Spelling options, a panel where
+   the spelling panel is (spp_on 2: spui.c hands it the keys and clicks);
+   so_save: sp_cfg written to WRITE.CFG (t_arg 0: done) */
+void so_open(void), so_close(void), so_key(void), so_press(void), so_save(void);
+void sp_bench(void);
+unsigned char sp_getin(void);           /* (v/spell.s) a key from the ROM's queue, 0 none */                    /* (test builds: the gate's measurements, t_arg $7D-$7F) */   /* (sppop.c) F7, F8 (t_arg the key); the idle pass's (t_arg 1: done something) */
+
 /* clip.c (overlay 7) */
 void clip_copy(void), clip_cut(void), clip_paste(void);
 
 #ifdef CW_TEST
 void test_start(void);
 void test_tick(void);
+void sp_tgate(void);                    /* (W60, v/ovlclr.c: the gate's, t_arg $7A-$7C) */
 extern unsigned char test_log;
 void __fastcall__ test_key(unsigned char k);
 void test_drawn(void);

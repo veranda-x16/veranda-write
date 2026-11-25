@@ -1,0 +1,54 @@
+PL.DIC -- the Polish spelling dictionary for Writer
+====================================================
+
+300 000 Polish word forms: the inflected forms of Morfologik 2.1
+"PoliMorf" (morfologik-polish 2.1.9), lower-cased, that are most frequent
+in the FrequencyWords Polish list. Built by tools/fetch_morfologik.sh with
+tools/build_dictionary.py; format in docs/dictionary-format.md.
+
+Sources and licences:
+
+  Morfologik, https://github.com/morfologik/morfologik-stemming
+    (c) 2016 Marcin Miłkowski, BSD 2-clause licence, reproduced below.
+    Decides which forms are correct Polish.
+
+  FrequencyWords by Hermit Dave, https://github.com/hermitdave/FrequencyWords
+    (Polish frequency list, 2018), Creative Commons Attribution-ShareAlike 4.0
+    (https://creativecommons.org/licenses/by-sa/4.0/). Decides which forms
+    are common enough to include.
+
+Because the selection follows the frequency list, PL.DIC is distributed
+under CC BY-SA 4.0 with attribution to both sources, and with Morfologik's
+copyright notice and disclaimer below. The rest of Writer is not affected.
+(tools/fetch_morfologik.sh 0 builds all 4.6 million Morfologik forms
+instead: 16.7 MB, BSD only.)
+
+------------------------------------------------------------------------
+Morfologik
+
+VERSION: 2.1 PoliMorf
+BUILD:   2016-02-13 19:37:50+01:00
+GIT:     6e63b53
+
+Copyright (c) 2016, Marcin Miłkowski
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met: 
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer. 
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution. 
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

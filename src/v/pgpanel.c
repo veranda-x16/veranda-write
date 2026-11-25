@@ -29,6 +29,7 @@
 #include <vrchoose.h>
 #include <vrpath.h>
 #include "cwv.h"
+#include "../spell.h"
 #include "view.h"
 #include "../office.h"
 #pragma code-name ("OVERLAY16")
@@ -514,6 +515,7 @@ void t_pdf(void)
     if (pp_on)
         return;
     k = t_arg;
+    callb(bank22, sp_unload);           /* (W59: spelling's banks back for the export) */
     if (ld_kind)
         ld_need(0xFFFFFFFFUL);          /* (all of it in first) */
     /* the name: the document's, its extension the format's */

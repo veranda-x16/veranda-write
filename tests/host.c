@@ -40,6 +40,11 @@ void FASTCALL plat_bank_free(unsigned char b)
     (void)b;                            /* (the host's banks are not given back) */
 }
 
+unsigned char plat_spare(void)
+{
+    return 0;                           /* (the X16's: the spelling cache's banks, fonts.c) */
+}
+
 unsigned char plat_free(void)
 {
     unsigned int n = host_bank_limit + 1 - next_bank;

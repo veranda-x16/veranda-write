@@ -13,7 +13,7 @@
 struct menu mbar = { 0, 14, 0, 0, HORIZONTAL | UN_CONSTRAINED | NBAR, {
     { "Veranda Write", DYN_SUB_MENU, m_dyn }, { "File", DYN_SUB_MENU, m_dyn }, { "Edit", DYN_SUB_MENU, m_dyn },
     { "Insert", DYN_SUB_MENU, m_dyn }, { "Text", DYN_SUB_MENU, m_dyn }, { "Style", DYN_SUB_MENU, m_dyn }, { "Format", DYN_SUB_MENU, m_dyn },
-    { "Font", DYN_SUB_MENU, m_dyn }, { "Size", DYN_SUB_MENU, m_dyn } } };
+    { "Font", DYN_SUB_MENU, m_dyn }, { "Size", DYN_SUB_MENU, m_dyn }, { "Tools", DYN_SUB_MENU, m_dyn } } };
 struct menu msub;
 char itext[MI][36];
 unsigned int barx[NBAR];

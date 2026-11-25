@@ -5,6 +5,7 @@
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #include <string.h>
 #include "cwv.h"
+#include "../spell.h"
 #pragma code-name ("OVERLAY8")
 #pragma rodata-name ("OVL8RO")
 #pragma bss-name ("OVL8BSS")
@@ -33,7 +34,11 @@ static const char *const names[][2] = {
     { "Align left", "Ctrl L" }, { "Centre", "Ctrl Shift C" }, { "Align right", "Ctrl Shift R" },
     { "Justify", "Ctrl J" }, { "\x1fIndent more", "" }, { "Indent less", "" }, { "\x1fSingle spacing", "" },
     { "One and a half lines", "" }, { "Double spacing", "" }, { "\x1fSpace after paragraphs", "" },
+    /* (W57: Tools, bar item 9) */
+    { "Check spelling...", "F7" }, { "Spelling suggestions", "F8" }, { "\x1fMark misspellings", "" },
+    { "\x1f" "English", "" }, { "Polish", "" }, { "\x1fSpelling options...", "" }, { "Get dictionaries...", "" },
 };
+#define NT_TOOLS 48                     /* (Tools' items in names) */
 
 /* s's width in the font now: a group's mark not drawn, a tab 24 pixels
    (the gap before the keys) */
@@ -73,8 +78,8 @@ void menu_make(void)
         for (i = 0; i < n; ++i)
             put_u(itext[i], sz_list[i]);
     } else {
-        a = mfirst[b];
-        n = mfirst[b + 1] - a;
+        a = b == 9 ? NT_TOOLS : mfirst[b];
+        n = b == 9 ? 7 : mfirst[b + 1] - a;
         for (i = 0; i < n; ++i) {
             p = itext[i];
             strcpy(p, names[a + i][0]);
@@ -82,6 +87,14 @@ void menu_make(void)
                 strcat(p, "\t");
                 strcat(p, names[a + i][1]);
             }
+        }
+        if (b == 9) {                   /* (the settings: on, in use) */
+            if (!fmt_lang && (fmt_lang = sp_cfg & SPC_LANG) == SPC_KEYB) {   /* (spell.c's default: the */
+                SysPrefs(PREFS_GET, iobuf);                                   /* settings', W60) */
+                fmt_lang = iobuf[6] & PREFS_POLISH ? LANG_PL : LANG_EN;
+            }
+            strcat(itext[2], sp_live ? "\ton" : "\toff");
+            strcat(itext[fmt_lang == LANG_PL ? 4 : 3], "\tin use");
         }
     }
     for (i = 0; i < n; ++i) {

@@ -21,6 +21,7 @@
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #include <string.h>
 #include "cwv.h"
+#include "../spell.h"
 
 static unsigned char wb0[NW], wb1[NW];  /* two slots' widths (W38) */
 unsigned char wbk[2] = { 0xFF, 0xFF };  /* which slots they are */
@@ -128,6 +129,17 @@ void bk_wr(unsigned char b, unsigned int a, const unsigned char *src, unsigned i
 unsigned char FASTCALL plat_bank_run(unsigned char n)
 {
     return BankAlloc(n);
+}
+
+/* (bank.c's, before a chunk goes out to the card for a bank) the
+   dictionary's cache gives its banks back to the pool (W59: it is only
+   a cache; not in the middle of a lookup) */
+unsigned char plat_spare(void)
+{
+    if (!sp_ncb || sp_busy)
+        return 0;
+    sp_aside();
+    return 1;
 }
 
 void FASTCALL plat_bank_free(unsigned char b)

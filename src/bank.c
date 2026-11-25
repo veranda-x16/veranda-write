@@ -8,7 +8,9 @@
    pool for the next chunk. bk_keep banks are left to Veranda (desk
    accessories, the kernel). When the pool has none and Veranda none to
    give, a chunk of the text or the line table is put out to the card
-   (swap.c's sw_take) and its bank is the one handed out. bk_release gives
+   (swap.c's sw_take) and its bank is the one handed out; but first the
+   platform's spare banks come back (plat_spare: the spelling
+   dictionary's cache, W59). bk_release gives
    back to the system every run whose banks are all in the pool (before
    the switcher puts the program aside: it counts the pool's banks as the
    program's, W15). (Veranda frees them all when the program quits.)
@@ -125,6 +127,8 @@ unsigned char bk_get(void)
             ++bk_owned;
             return b;
         }
+        if (plat_spare() && (b = pick(0, NRUN)) != 0)
+            return b;                   /* (W59: the dictionary's cache gave its banks back) */
         if (run_n[BK_LO - 1] && (b = sw_take_lo()) != 0)
             return b;
     }
@@ -132,7 +136,7 @@ unsigned char bk_get(void)
         for (i = 0; i < NRUN && run_n[i]; ++i)
             ;
         if (i == NRUN)
-            return sw_take();
+            return plat_spare() ? pick(0, NRUN) : sw_take();
         n = i < BK_LO ? 1 : bk_owned < 8 ? 2 : bk_owned < 32 ? 4 : bk_owned < 64 ? 8 : 16;
         k = bk_keep ? plat_free() : 0xFF;
         k = k > bk_keep ? k - bk_keep : 0;
@@ -144,7 +148,7 @@ unsigned char bk_get(void)
                 break;
         }
         if (!n)
-            return sw_take();
+            return plat_spare() ? pick(0, NRUN) : sw_take();
         run_b[i] = b;
         run_n[i] = n;
         bk_owned += n;
