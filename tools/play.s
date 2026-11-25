@@ -16,7 +16,7 @@
 ;   'P' xl xh yl yh   the pointer to (x, y)
 ;   'C' n             the pointer to the menu bar's item n (barx[n] + 6, 7)
 ;   'J' m             the pointer to item m of the list open under it (24 + 16 m)
-;   'D' / 'U'         the button down / up
+;   'D' / 'U'         the button down / up ('G': the right one down)
 ;   'K' k             a key (the ROM's ISO code) into its queue
 ;   'T' n k1 .. kn    n keys (up to 8) at once
 ;   'M' m             the ROM's modifier keys held from now (shflag: 1
@@ -56,7 +56,7 @@
 .include "x16hw.inc"
 
 .export _play_bank, _play_go, _play_slow, _play_t0, _play_st
-.import _cw_idle, _test_log, _barx
+.import _cw_idle, _test_log, _barx, _bank16
 
 GAP     = 6
 HUNG    = 30000                 ; frames (500 s: a 4 MB document opens in about 5 minutes)
@@ -92,12 +92,73 @@ _play_t0: .res 4                ; the clock when it was put
 
 .segment "CODE"
 
+; (W56) the player's code is in overlay 16's bank (the test build's main
+; RAM had no room for it): the interrupt calls this, which maps it, and
+; maps back the bank that was (the kernel's, an overlay's); the record's
+; bytes (in the session's bank) and the ROM's modifiers (RAM bank 0) are
+; read and written here, in main RAM
 _play_go:
-	lda #<Player
+	lda #<Tramp
 	sta mouseSource
-	lda #>Player
+	lda #>Tramp
 	sta mouseSource+1
 	rts
+
+Tramp:	lda $00
+	pha
+	lda _bank16
+	sta $00
+	jsr Player              ; (a: the buttons; c set)
+	tay
+	pla
+	sta $00
+	tya
+	sec
+	rts
+
+; the record at cur into rec, from the session's bank
+rdrec:	lda $00
+	pha
+	lda _play_bank
+	sta $00
+	lda cur
+	sta @a+1
+	lda cur+1
+	sta @a+2
+	ldx #0
+@a:	lda $FFFF,x
+	sta rec,x
+	inx
+	cpx #10
+	bne @a
+	pla
+	sta $00
+	rts
+
+; 'M': the ROM's modifiers (RAM bank 0)
+setmods:
+	ldx $00
+	stz $00
+	lda rec+1
+	sta SHFLAG
+	stx $00
+	rts
+
+
+; the program's idle pass, a = cur_on: the main loop slowed while the
+; probe runs, about bslow * 1,300 cycles (256 x 5 a step)
+_play_slow:
+	sta bcur
+	ldy bslow
+	beq @r
+@o:	ldx #0
+@i:	dex
+	bne @i
+	dey
+	bne @o
+@r:	rts
+
+.segment "OVERLAY16"
 
 Player:	jsr rep
 	lda bn
@@ -174,18 +235,6 @@ opB:	lda rec+1
 	sta bn
 	rts
 
-; the program's idle pass, a = cur_on: the main loop slowed while the
-; probe runs, about bslow * 1,300 cycles (256 x 5 a step)
-_play_slow:
-	sta bcur
-	ldy bslow
-	beq @r
-@o:	ldx #0
-@i:	dex
-	bne @i
-	dey
-	bne @o
-@r:	rts
 
 ; the clock now into tl
 mark:	lda EMU_CLOCK
@@ -268,23 +317,7 @@ step:	lda ended
 	jsr KBDBUF_PEEK         ; x: keys in the ROM's
 	cpx #0
 	bne @r
-	; the record at cur, from the script's bank
-	lda $00
-	pha
-	lda _play_bank
-	sta $00
-	lda cur
-	sta @a+1
-	lda cur+1
-	sta @a+2
-	ldx #0
-@a:	lda $FFFF,x
-	sta rec,x
-	inx
-	cpx #10
-	bne @a
-	pla
-	sta $00
+	jsr rdrec               ; the record at cur, from the script's bank
 	lda #GAP
 	sta wait
 	lda rec
@@ -320,6 +353,8 @@ ops:	.byte 'P', 5
 	.addr opD - 1
 	.byte 'U', 1
 	.addr opU - 1
+	.byte 'G', 1
+	.addr opG - 1
 	.byte 'K', 2
 	.addr opK - 1
 	.byte 'T', 0
@@ -419,6 +454,9 @@ opD:	lda #1
 	rts
 opU:	stz pb
 	rts
+opG:	lda #2                  ; (W58) the right button down ('U' up)
+	sta pb
+	rts
 opK:	lda rec+1
 	jmp k_kbdbuf_put
 opT:	lda rec+1               ; n keys: the record is 2 + n bytes
@@ -439,12 +477,7 @@ opT:	lda rec+1               ; n keys: the record is 2 + n bytes
 	inx
 	bra @k
 @r:	rts
-opM:	ldx $00
-	stz $00
-	lda rec+1
-	sta SHFLAG
-	stx $00
-	rts
+opM:	jmp setmods
 opW:	lda rec+1
 	sta wait
 	rts

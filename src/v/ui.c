@@ -11,6 +11,7 @@
 #include <vrpath.h>
 #include <theme.h>
 #include "cwv.h"
+#include "../spell.h"
 #pragma code-name ("OVERLAY1")
 #pragma rodata-name ("OVL1RO")         /* (its strings: copied before the kernel sees them) */
 
@@ -360,6 +361,7 @@ void __fastcall__ m_item(unsigned char i)
     case 6: fmt_par(i); return;
     case 7: pick_font(i); return;
     case 8: pick_size(i); return;
+    case 9: t_arg = i; if (sp_on()) callb(bank26, t_tools); return;   /* (W57: Tools, v/sppop.c) */
     }
     acts[mfirst[menu_bar] + i]();
 }
@@ -417,12 +419,18 @@ static void key(void)
 #ifdef CW_TEST
     test_key(k);
 #endif
+    sp_kj = cw_jiffies();               /* (W58: live checking waits for a pause) */
     if (pp_on) {
         callb(bank16, pp_key);          /* (the page setup panel: every key its own) */
         return;
     }
     if (fp_on) {
         CALL9(fp_key);                  /* (the find panel's typing) */
+        if (t_arg)
+            return;
+    }
+    if (spp_on) {
+        callb(bank25, spp_key);         /* (the spelling panel's, W57) */
         if (t_arg)
             return;
     }
@@ -512,6 +520,15 @@ static void key(void)
         anc = cur;
         ui_moved();
         return;
+    case KEY_F7:                        /* (W57: Check spelling; F8 the word's suggestions) */
+    case KEY_F8:
+        if (!ctrl) {
+            t_arg = k;
+            if (sp_on())
+                callb(bank26, sp_fkey);
+            return;
+        }
+        break;
     case 0xA0:
         if (sh)
             k = ' ';                    /* Shift + Space */
@@ -580,6 +597,12 @@ static void press(void)
         r11 = x;
         r12 = y;
         CALL9(fp_press);
+        return;
+    }
+    if (spp_on && y > ta_bot && y <= TA_END && x >= PG_L && x <= PG_R) {
+        r11 = x;
+        r12 = y;
+        callb(bank25, spp_press);
         return;
     }
     if (hit(x, y, &p)) {
@@ -728,6 +751,13 @@ static void tick(void)
         CALL2(f_ldstep);                /* the rest of a document being opened */
         return;
     }
+    if (menuNumber == 0 && ((sp_live && sp_pend) || ((mouseButtons & 2) && !(sp_cfg & SPC_ASK))) && sp_on()) {
+        callb(bank26, sp_tick);         /* (W58: a right click, live checking; W60: neither when asked only) */
+        if (t_arg) {
+            cw_idle = 0;
+            return;
+        }
+    }
     if (menuNumber == 0)
         view_blink();
     cw_idle = 1;
@@ -744,6 +774,7 @@ static void tick(void)
 
 void __fastcall__ ui_main(unsigned char opts)
 {
+    callb(bank19, ovl_clear);           /* (W60: the overlays' variables 0, as on a first start) */
     dispBufferOn = ST_WR_FORE | ST_WR_BACK;
     vr_home(opts);                      /* /DOCUMENTS first (Veranda's DECISIONS V71) */
     if (curDirName[0] != '/')
@@ -772,5 +803,6 @@ void __fastcall__ ui_main(unsigned char opts)
     need_view = 1;
     status_dirty = 1;
     follow = 1;
+    callb(bank22, sp_cfgload);          /* (W60: the spelling settings; W58: marks as you type) */
     LogText((void *)running);
 }

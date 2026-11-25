@@ -14,6 +14,7 @@
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #include <string.h>
 #include "cwv.h"
+#include "../spell.h"
 #pragma code-name ("OVERLAY9")
 #pragma rodata-name ("OVL9RO")
 
@@ -133,6 +134,8 @@ static void draw(void)
 
 void fp_open(void)
 {
+    if (spp_on)
+        callb(bank25, spp_close);       /* (W57: one panel at a time) */
     view_cursor(0);
     fp_focus = t_arg;
     if (!fp_on) {

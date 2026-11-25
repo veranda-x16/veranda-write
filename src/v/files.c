@@ -20,6 +20,7 @@
 #include <vrchoose.h>
 #include <vrpath.h>
 #include "cwv.h"
+#include "../spell.h"
 #include "view.h"
 #include "../office.h"
 #pragma code-name ("OVERLAY2")
@@ -103,6 +104,7 @@ static unsigned char load(const char *name)
     static unsigned char kind, e;
     static unsigned int n;
     static char *p;
+    callb(bank22, sp_unload);           /* (W59: spelling's banks back: a .docx or an .odt is converted in RAM) */
     strncpy(nm, name, 63);
     nm[63] = 0;
     fh = FOpen(nm, 'r');

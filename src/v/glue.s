@@ -70,6 +70,7 @@ _cw_esc:
 	tax
 	rts
 
+.export far                     ; (v/spell.s's wrappers too)
 far:	sta fa
 	stx fx
 	pla                     ; the inline words - 1

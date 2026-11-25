@@ -16,9 +16,10 @@
 #include <vrpath.h>
 #include "cwv.h"
 #include "../office.h"
+#include "../spell.h"
 
 unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16;
-unsigned char bank17, bank18, bank19, bank20, bank21, bank22, bankt;
+unsigned char bank17, bank18, bank19, bank20, bank21, bank22, bank23, bank24, bank25, bank26, bankt;
 unsigned char cw_idle, follow;
 pos_t cur, anc;
 unsigned int goal_x = 0xFFFF;
@@ -216,6 +217,8 @@ void cw_aside(void)
         if (fs_kind[k] == 1)
             fs_kind[k] = 0;
     fl_flush();
+    if (bank23)
+        sp_aside();                     /* (W56: the dictionary's file closed, its cache's banks back) */
     sw_aside();                         /* (the pool's idle runs, and chunks out to the card
                                            till Veranda has the banks the switcher needs) */
 #ifdef CW_TEST
@@ -232,6 +235,15 @@ void dlg_keep(void)
     }
     if (!dlg_bank)
         dlg_bank = BankAlloc(1);
+}
+
+/* (W59) spelling's overlays: loaded (from SPELL.OVL, v/spload.c), else
+   loaded now; 0 not there */
+unsigned char sp_on(void)
+{
+    if (!bank23 && !sp_nofile)
+        callb(bank22, sp_load);
+    return bank23;
 }
 
 /* the busy pointer during a long layout (layfix.c's lay_busy: a
@@ -296,6 +308,8 @@ int main(void)
     bank21 = r1L;
     LoadOverlay(22, 0);
     bank22 = r1L;
+    /* (overlays 23-26, spelling: not records; v/spload.c loads them
+       from SPELL.OVL when they are first wanted, W59) */
 #ifdef CW_TEST
     LoadOverlay(TOVL, 0);
     bankt = r1L;

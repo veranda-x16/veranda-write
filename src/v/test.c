@@ -1,4 +1,4 @@
-/* Veranda Write's gate: the test build's part (-DCW_TEST; overlay 23,
+/* Veranda Write's gate: the test build's part (-DCW_TEST; overlay 27,
    its variables and small entry points in main RAM: the test build's
    main RAM is the program's but for them, W48). test_start reads the session (CW.PLY,
    tools/script.py writes it) into a RAM bank and starts the player
@@ -19,6 +19,7 @@
 #include <string.h>
 #include "cwv.h"
 #include "view.h"
+#include "../spell.h"
 
 extern unsigned char play_bank, play_st, play_t0[4];
 void play_go(void);
@@ -29,8 +30,8 @@ static char line[160];                  /* (main RAM: LogText reads it) */
 static unsigned char t_k;               /* (test_key's) */
 static char mk_w[16];                   /* (test_mark's: the caller's name, copied) */
 
-#pragma code-name ("OVERLAY23")
-#pragma rodata-name ("OVL23RO")
+#pragma code-name ("OVERLAY27")
+#pragma rodata-name ("OVL27RO")
 static unsigned char clk[4], armed, playing, lat_k, lats;
 static unsigned long lat_t0;
 static const char hex[] = "0123456789ABCDEF";
@@ -95,6 +96,13 @@ static void e_test_start(void)
 {
     unsigned char h;
     h = FOpen(ply, 'r');
+    if (h < 2) {
+        strcpy(line, "/");              /* (W60: started again, v/ovlclr.c's 'L' $7C: the second part, */
+        ChDir(line);                    /*  in the root; the program starts in /DOCUMENTS once there is one) */
+        strcpy(line, "CW.PL2");
+        h = FOpen(line, 'r');
+        ChDir((char *)curDirName);
+    }
     if (h < 2) {
         strcpy(line, "CW NO SCRIPT");   /* (the kernel reads it: main RAM) */
         LogText(line);
@@ -211,7 +219,7 @@ static void log_state(void)
    rows that differ (0: the edits drew what a full drawing draws). The
    paper's bookkeeping (clr_y, clr_pg) put back as it was, so the next
    edit is drawn as it would have been without the check */
-#pragma bss-name (push, "OVL23BSS")
+#pragma bss-name (push, "OVL27BSS")
 static unsigned char rh[TA_END - TA_TOP + 1];   /* (a row's hash, a byte: 4 KB for the session after it) */
 static unsigned int rd_y, rd_n, rd_first, rd_last, rd_cy, rd_cp, rd_h;
 static unsigned char rd_i, rd_s;
@@ -234,6 +242,9 @@ static void redraw_check(void)
 {
     char *p = line;
     cw_idle = 0;                        /* (the player waits: its frames count only when idle) */
+    sp_kj = cw_jiffies() - 100;         /* (W59: no key lately: rows drawn with their marks) */
+    while (sp_on() && sp_idle())                   /* (W58: live checking done first: the marks as they settle) */
+        ;
     view_cursor(0);
     for (rd_y = TA_TOP; rd_y <= TA_BOT; ++rd_y)
         rh[rd_y - TA_TOP] = row_hash(rd_y);
@@ -273,7 +284,17 @@ static void e_test_tick(void)
     k = test_log;                       /* (once: the player sets it in the interrupt) */
     if (k & 0x80)
         redraw_check();
-    else if (k)
+    else if (k >= 0x79 && k < 0x7D) {
+        test_log = 0;                   /* (W60: v/ovlclr.c's: the keyboard's setting, the settings logged, */
+        t_arg = k;                      /*  quit and start again) */
+        callb(bank19, sp_tgate);
+    }
+    else if (k >= 0x7D) {
+        t_arg = k;                      /* (W56: spelling's measurements, v/sppop.c) */
+        if (sp_on())
+            callb(bank26, sp_bench);
+        test_log = 0;
+    } else if (k)
         log_state();
 }
 

@@ -1,0 +1,34 @@
+# Veranda Write's spelling dictionaries: their own GitHub release (W61),
+# made from dict/ by tools/mkdict.py. Only when you run it: Actions >
+# Dictionaries > Run workflow. The release dict-1 (the format Veranda Write
+# reads) is made the first time; after that its assets are replaced (a new
+# revision of the same format). Veranda Update fetches DICT.LST and the
+# dictionaries from it (Write's Tools > Get dictionaries); the zip is for
+# copying by hand. (Kept by Veranda's tools/publish.sh: the export adds
+# only veranda-ci.yml beside it.)
+name: Dictionaries
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: The release's files
+        run: python3 -I -B tools/mkdict.py dict build/dict-release --repo "$GITHUB_REPOSITORY"
+      - name: Publish dict-1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd build/dict-release
+          files="EN.DIC EN.DIC.txt PL.DIC PL.DIC.txt DICT.LST Veranda-Write-dictionaries.zip"
+          if gh release view dict-1 > /dev/null 2>&1; then
+            gh release upload dict-1 --clobber $files
+          else
+            gh release create dict-1 --title "Veranda Write's dictionaries (format 1)" --notes-file NOTES.md --latest=false $files
+          fi

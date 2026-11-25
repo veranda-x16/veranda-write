@@ -10,7 +10,9 @@
    without it has the user's default, page.c) before TEXT; 1.3 the text's
    set in INFO (byte 6: 0 Latin-1, older files; 1 ISO-8859-16, Veranda's
    set, V135: what this version writes; a Latin-1 text is converted as it
-   is read, the letters the set lacks made '?' and counted). The text is the
+   is read, the letters the set lacks made '?' and counted); 1.5 the
+   spelling language in INFO (byte 7: 0 not said, 1 English, 2 Polish;
+   W57). The text is the
    document's byte stream as it is in memory; the reader checks it
    (characters and whole codes only, style codes naming a style there
    is) and drops what is not.
@@ -29,6 +31,7 @@
 pos_t fmt_cursor;
 unsigned int fmt_lost;
 unsigned char fmt_cs;
+unsigned char fmt_lang;                 /* (1.5, W57) the spelling language: INFO's last byte */
 
 /* the Latin-1 bytes of iobuf[0 .. n) in the set: the 40 places where
    ISO-8859-16 has another letter made '?' and counted (W38; the X16's in
@@ -110,6 +113,7 @@ unsigned char fmt_save(cw_wfn w0, pos_t cursor)
     h[4] = (unsigned char)wrap_w;
     h[5] = (unsigned char)(wrap_w >> 8);
     h[6] = CS_L10;
+    h[7] = fmt_lang;                    /* (1.5: the spelling language, W57) */
     if (chunk("INFO", 8) || w(h, 8))
         return FE_IO;
     n = 1;
@@ -442,6 +446,7 @@ unsigned char fmt_begin(cw_rfn r)
                 return FE_IO;
             fmt_cursor = get4(h);
             fmt_cs = h[6] == CS_L10 ? CS_L10 : CS_LATIN1;
+            fmt_lang = h[7] <= 2 ? h[7] : 0;    /* (1.5; before: 0, the default) */
         } else if (!memcmp(h, "FONT", 4) && len >= 1) {
             if (rd(&n, 1))
                 return FE_IO;

@@ -235,6 +235,29 @@ def main():
         if want != got_t:
             bad.append('Go to page %d: the cursor at "%s", the PDF\'s page starts "%s"' % (ps['page'], want, got_t))
         print('go to page %d: "%s" (the PDF\'s page: "%s")' % (ps['page'], want, got_t))
+    # (W56-W59) spelling: what Check spelling found, in order ("CW SPELL r
+    # word n first search sugg", v/spui.c), the first suggestion where the
+    # session counts on it; the lookups' timings ("CW SPB name cycles r")
+    sp = [(int(m.group(1), 16), bytes.fromhex(m.group(2)).decode('iso8859_16'), int(m.group(3), 16),
+           bytes.fromhex(m.group(4)).decode('iso8859_16'), int(m.group(5), 16), int(m.group(6), 16))
+          for m in re.finditer(r'CW SPELL ([0-9A-F]{2}) ([0-9A-F]*) ([0-9A-F]{2}) ([0-9A-F]*) ([0-9A-F]{8}) ([0-9A-F]{8})',
+                               con)]
+    want = exp.get('spell', [])
+    for i, (r, w, fs) in enumerate(want):
+        if i >= len(sp):
+            if not partial:
+                bad.append('spelling %d: not logged (want %s)' % (i + 1, w or 'the end'))
+            break
+        g = sp[i]
+        if g[0] != r or g[1] != w:
+            bad.append('spelling %d: found %r (%d), want %r (%d)' % (i + 1, g[1], g[0], w, r))
+        elif fs and g[3] != fs:
+            bad.append('spelling %d: %s\'s first suggestion %r, want %r' % (i + 1, w, g[3], fs))
+    for i, (r, w, n, f, t1, t2) in enumerate(sp):
+        print('spelling %2d: %-12s %d suggestions (%s), searched %.3f s, suggested %.3f s'
+              % (i + 1, w or '(the end)', n, f, t1 / MHZ, t2 / MHZ))
+    for m in re.finditer(r'CW SPB (\S+) ([0-9A-F]{8}) ([0-9A-F]{2})', con):
+        print('lookup %-8s %8.1f ms (%d)' % (m.group(1), int(m.group(2), 16) / MHZ * 1000, int(m.group(3), 16)))
     for m in re.finditer(r'CW MARK (\S+) ([0-9A-F]{8})', con):
         print('mark %s: %.3f s' % (m.group(1), int(m.group(2), 16) / MHZ))
     for m in re.finditer(r'CW SWAP ([0-9A-F]{8}) ([0-9A-F]{8})', con):
@@ -255,6 +278,12 @@ def main():
                                      'v': 'export Report as .odt', 'x': 'export Big report as .docx',
                                      'y': 'export Big report as .odt'}.get(m.group(1), m.group(1)),
                                     int(m.group(2), 16) / MHZ))
+    # (W61) said once: the console holds it exactly once
+    for t in exp.get('once', []) if not partial else []:
+        if con.count(t) != 1:
+            bad.append('"%s" %d times in the console, want once' % (t, con.count(t)))
+        else:
+            print('once: %s' % t)
     lat(con, exp.get('labels', {}))
     for n, want in exp.get('lossy', {}).items():
         g = got.get(int(n))

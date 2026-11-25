@@ -27,18 +27,29 @@ ALLOW = {
              '_clip_copy', '_clip_cut', '_clip_paste', '_menus_layout', '_sizes_fill', '_menu_make',
              '_t_named', '_t_format', '_t_body', '_fp_open', '_fp_key', '_fp_press', '_fp_next',
              '_t_count', '_t_goto', '_t_date', '_f_ldstep', '_t_popup',
-             '_pg_loaddef', '_pp_key', '_pp_open', '_pp_press', '_t_pbreak', '_t_pdf'},
-    'pgpanel.o': {'_pg_loaddef', '_pg_export', '_pg_field'},
+             '_pg_loaddef', '_pp_key', '_pp_open', '_pp_press', '_t_pbreak', '_t_pdf',
+             '_sp_fkey', '_sp_tick', '_spp_key', '_spp_press', '_t_tools', '_sp_cfgload', '_ovl_clear'},
+    'pgpanel.o': {'_pg_loaddef', '_pg_export', '_pg_field', '_sp_unload'},
+    'files.o': {'_sp_unload'},
     'tools.o': {'_m_item'},     # (the lists' routine: the kernel calls it in appBank, overlay 1)
     'view.o': {'_v_all', '_v_frame', '_v_refresh', '_t_toolbar', '_v_fix_cursor', '_v_scroll',
                '_v_title', '_t_status'},
     'view2.o': {'_t_sbar'},
     'popup.o': {'_menu_make'},
     'tbar.o': {'_t_ruler'},
-    'test.o': {'_log_state'},
     'cbuf.o': {'_sw_stamp'},    # (data in overlay 11's bank: cbuf.c maps it first, sw_tbank)
     'cbread.s.o': {'_sw_stamp'},
-    'main.o': {'_ui_main', '_vr_file'},   # (bank 1 and bank 3 mapped first)
+    'main.o': {'_ui_main', '_vr_file', '_sp_load'},   # (bank 1, 3, 22 mapped first)
+    # (W56-W59) spelling: v/spell.s's wrappers (far); the panel's, the
+    # pop-up's and the Tools menu's routines through callb
+    'spell.s.o': '*',
+    'sphash.s.o': {'_sp_lc'},   # (its overlay 23 part, the scanner, reads overlay 23's table)
+    'findui.o': {'_spp_close'},
+    'sppop.o': {'_spp_open', '_so_open', '_so_close', '_so_save'},
+    'spui.o': {'_so_key', '_so_press'},   # (W60: the options' panel, overlay 24)
+    'spopt.o': {'_sp_cfgsave'},
+    'test.o': {'_log_state', '_sp_bench', '_sp_tgate'},
+    'ovlclr.o': {'_f_quit'},
 }
 
 
@@ -99,8 +110,9 @@ def main():
                 continue                # (main RAM: code or data)
             # the callee's code is in an overlay: the caller must be in that one only
             if 0 in src or src - dst or len(dst) > 1:
-                if len(dst) > 1 and 0 in dst:
-                    continue            # (an object in both: e.g. test.o's resident part)
+                if len(dst) > 1 and 0 in dst and src == dst - {0}:
+                    continue            # (an object in both, its overlay's symbol used there: test.o, play.o;
+                                        #  its main RAM part's symbols are below $A000, above)
                 print('check_ovl: %s (%s) uses %s of %s (%s)' % (b, sorted(src), s, e, sorted(dst)))
                 bad += 1
     if bad:

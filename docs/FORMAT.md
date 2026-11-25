@@ -1,9 +1,9 @@
 # Veranda Write's document format (CWRD)
 
-Version 1.4 (1.0 plus paragraph styles: the `PARA` chunk and the `$11`
+Version 1.5 (1.0 plus paragraph styles: the `PARA` chunk and the `$11`
 code, 1.1; the page break, the `$12` code, 1.2; the text's character set
 in `INFO`, 1.3; the page setup, the `PAGE` chunk: the paper, the margins,
-the header and the footer, 1.4). A Veranda Write document is a plain file on the card (any
+the header and the footer, 1.4; the spelling language in `INFO`, 1.5). A Veranda Write document is a plain file on the card (any
 FAT name; the program adds `.cwr` when a name has no extension, and
 Veranda's shell opens `.CWR` files with it). All numbers are little
 endian. `src/format.c` reads and writes it on the X16 and in the host
@@ -15,7 +15,7 @@ tests; `tools/cwrd.py` does the same on a PC.
 |---|---|---|
 | 0 | 4 | `CWRD` |
 | 4 | 1 | major version: 1 |
-| 5 | 1 | minor version: 4 (1.0's files: 0, 1.1's: 1, 1.2's: 2, 1.3's: 3) |
+| 5 | 1 | minor version: 5 (1.0's files: 0, 1.1's: 1, 1.2's: 2, 1.3's: 3, 1.4's: 4) |
 | 6 | 2 | flags: 0 (reserved) |
 
 A reader refuses a file whose major version is newer than its own. A
@@ -30,7 +30,7 @@ skipped. The order matters only where noted.
 
 | Tag | Since | Contents |
 |---|---|---|
-| `INFO` | 1.0 | 4 bytes: the cursor (a place in the text); 2: the text's width in pixels at 80 an inch (520 until 1.3; in 1.4 the page setup's, as `PAGE` gives it: a reader takes `PAGE`'s); 1: the text's character set (1.3; reserved, 0, before): 0 Latin-1 (ISO-8859-1), 1 ISO-8859-16 (Veranda's set); 1: reserved (0). Longer in later versions: read the first 8 bytes, skip the rest |
+| `INFO` | 1.0 | 4 bytes: the cursor (a place in the text); 2: the text's width in pixels at 80 an inch (520 until 1.3; in 1.4 the page setup's, as `PAGE` gives it: a reader takes `PAGE`'s); 1: the text's character set (1.3; reserved, 0, before): 0 Latin-1 (ISO-8859-1), 1 ISO-8859-16 (Veranda's set); 1: the spelling language (1.5; reserved, 0, before): 0 not said (the program's default: Polish when Veranda's keyboard setting is Polish, else English), 1 English, 2 Polish; a reader of 1.4 or before passes over it. Longer in later versions: read the first 8 bytes, skip the rest |
 | `FONT` | 1.0 | 1 byte: n, then n names: a length byte and the name (Latin-1, at most 31 characters): the fonts the styles use, by the names Veranda's `LoadFont` takes ("Gate Sans", "System") |
 | `STYL` | 1.0 | 1 byte: n (1-128 in 1.0), then n character styles of 4 bytes: the font (an index into `FONT`), the size in points, the flags, the colour (0; reserved for later) |
 | `PARA` | 1.1 | 1 byte: n (1-32), then n paragraph styles of e bytes each, e = (the chunk's length - 1) / n: 8 in 1.1 (below); a later version may make them longer: read the first 8 of each. Style 0 is the style of every paragraph without a paragraph code. Must come before `TEXT`. Without it (a 1.0 file) there is style 0 only: Body |
@@ -171,8 +171,8 @@ DECISIONS W24-W28). The original is never written: Save writes a `.cwr`.
 "Hi **you**" and a paragraph end, centred, in Gate Sans 12:
 
 ```
-43 57 52 44 01 01 00 00                     CWRD 1.1 (1.2 writes 01 02, 1.3 01 03, 1.4 01 04)
-49 4E 46 4F 08 00 00 00  00 00 00 00 08 02 00 00    INFO: cursor 0, width 520 (1.3: 08 02 01 00, ISO-8859-16)
+43 57 52 44 01 01 00 00                     CWRD 1.1 (1.2 writes 01 02, 1.3 01 03, 1.4 01 04, 1.5 01 05)
+49 4E 46 4F 08 00 00 00  00 00 00 00 08 02 00 00    INFO: cursor 0, width 520 (1.3: 08 02 01 00, ISO-8859-16; 1.5: 08 02 01 02, Polish spelling)
 46 4F 4E 54 0B 00 00 00  01 09 "Gate Sans"          FONT: 1 font
 53 54 59 4C 09 00 00 00  02 00 0C 00 00 00 0C 01 00 STYL: 2 styles (plain, bold)
 50 41 52 41 11 00 00 00  02                         PARA: 2 paragraph styles:
@@ -192,3 +192,10 @@ paragraphs; saving it there writes the older version without the page
 setup. A file of 1.0-1.3 opens in 1.4 with the user's default page
 setup (Veranda Write: File > Page setup, "For new documents"; A4 with 2.5
 cm margins until one is chosen).
+
+A 1.5 file opens in a program of 1.4 or before as it did: `INFO`'s last
+byte was reserved and is passed over, so only the spelling language is
+not kept (saved there, the file is the older version, language 0). A
+file of 1.4 or before opens in 1.5 with the language not said: Veranda
+Write checks it in its default language (Polish when Veranda's keyboard
+setting is Polish, else English) and saves that one with it.

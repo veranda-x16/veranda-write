@@ -45,7 +45,7 @@ TB_Y, TB_ALIGN, TB_LIST, TB_INDENT, TB_NAME = 32, 240, 320, 368, 416   # the too
 YES_BUTTON = (255, 271)                 # a Yes/No box's Yes (the default box, centred)
 NO_BUTTON = (319, 271)                  # a Yes/No/Cancel box's No (its middle icon)
 # the menu bar (src/v/menus.c, stage 3: Insert after Edit)
-APPM, FILEM, EDIT, INSERT, TEXT, STYLE, FORMAT, FONT, SIZE = range(9)
+APPM, FILEM, EDIT, INSERT, TEXT, STYLE, FORMAT, FONT, SIZE, TOOLS = range(10)
 
 
 def is_head(k):
@@ -1203,6 +1203,431 @@ def session_speed(run):
     return s, files
 
 
+F7, F8 = 0x88, 0x8C                     # (the ROM's codes: Veranda's KEY_F7, KEY_F8)
+
+
+def spell_text(lang, n, seed):
+    """about n words of running text in the language, drawn by frequency
+    (Polish: Writer's FrequencyWords list, the words PL.DIC has; English:
+    SCOWL's commonest lists), sentences of 6-14 words, paragraphs of 5-9
+    sentences, and an unknown word at its end (Check spelling reads it all)"""
+    import random
+    import build_dictionary as bd
+    rnd = random.Random(seed)
+    dic = open('dict/%s.DIC' % lang.upper(), 'rb').read()
+    words, weights = [], []
+    if lang == 'pl':
+        src = os.path.expanduser(os.environ.get('PL_FREQ', '~/Projects/Writer/dict-src/pl_full.txt'))
+        for line in open(src, encoding='utf-8'):
+            w, c = line.split()
+            try:
+                b = w.encode('iso8859_16')
+            except UnicodeEncodeError:
+                continue
+            if len(w) > 1 and w.isalpha() and bd.lookup(dic, b):
+                words.append(w)
+                weights.append(int(c))
+            if len(words) >= 6000:
+                break
+    else:
+        f = 'build/dsrc/scowl/scowl-2020.12.07/final/english-words.'
+        for k in ('10', '20'):
+            for line in open(f + k, encoding='latin-1'):
+                w = line.strip()
+                if len(w) > 1 and w.isalpha() and w.islower() and bd.lookup(dic, w.encode('iso8859_16')):
+                    words.append(w)
+        rnd.shuffle(words)
+        weights = [1.0 / (i + 10) for i in range(len(words))]
+    out, k = [], 0
+    while k < n:
+        para = []
+        for _ in range(rnd.randint(5, 9)):
+            m = rnd.randint(6, 14)
+            sw = rnd.choices(words, weights, k=m)
+            sw[0] = sw[0][0].upper() + sw[0][1:]
+            para.append(' '.join(sw) + '.')
+            k += m
+        out.append(' '.join(para))
+    return '\r'.join(out) + ' Zzzqx.', k + 1
+
+
+def session_spell(run):
+    """spelling (SESSION=spell; W56-W59), under R49 at 512 KB on a host
+    folder and an SD card image: a Polish document with words the
+    dictionary has not, live marks (a screenshot), Check spelling (F7)
+    from its start: Change (Return) to the first suggestion, Ignore,
+    Ignore all, Add (the user's words' file checked), the end; saved; an
+    English document: a right click on a word and its pop-up, the Tools
+    menu's languages, Change all, put aside (Alt+Tab) and back, F8 on a
+    word typed; the lookups timed ('L' $7F: tools/check.py prints them);
+    Check spelling over 2,000 words of Polish and of English as Writer
+    did it (no hash, a 16 KB cache), from cold and again; typing timed
+    with the marks on"""
+    import subprocess
+    s = Script()
+    files = {}
+    st = [0]
+
+    def chars(t):
+        return [(b, SANS, 12, 0) for b in t.encode('iso8859_16')]
+
+    def text(m):
+        return bytes(c[0] for c in m.c).decode('iso8859_16')
+
+    def first(words, lang):
+        r = subprocess.run([os.environ.get('TEST_CW', 'build/host/test_cw')], capture_output=True,
+                           env=dict(os.environ, CW_SUGG=' '.join(w.lower() for w in words), CW_LANG=lang))
+        out = {}
+        for line in r.stdout.decode('utf-8').splitlines():
+            f = line.split('\t')
+            out[f[0]] = f[2] if len(f) > 2 else None
+        return out
+
+    def cased(w, sg):
+        if len(w) > 1 and w.upper() == w:
+            return sg.upper()
+        return sg[0].upper() + sg[1:] if w[0].isupper() else sg
+
+    def rep(m, old, new, at=0, every=False):
+        """old replaced by new (the first character's style) from at"""
+        t = text(m)
+        while True:
+            i = t.find(old, at)
+            if i < 0:
+                return
+            sty = m.c[i][1:]
+            m.c[i:i + len(old)] = [(b,) + sty for b in new.encode('iso8859_16')]
+            m.mod = True
+            t = text(m)
+            at = i + len(new)
+            if not every:
+                return
+
+    def state(m, name, label=None):
+        st[0] += 1
+        s.L(st[0], m.state(name))
+        if label:
+            s.labels[st[0]] = label
+    s.labels = {}
+    s.spell = []
+
+    def found(word, first_s=None):
+        s.spell.append([1, word, first_s])
+
+    def done():
+        s.spell.append([0, '', None])
+
+    def opn(letter):
+        s.K(ord('o'), CTRL)
+        s.W(40)
+        s.K(ord(letter))
+        s.W(10)
+        s.K(RET)
+        s.W(90)
+
+    PL = ('Ksiazka leży na stole, a kot pije mleko.\rTo jest mój komputre i mój stół.\r'
+          'Prosze, daj mi ten zolw teraz.\rŁadny dzień, Spoczynski był tu.\r'
+          'Biało-czerwony NATO i ABCDEFG, ABCDEFG.')
+    EN = ("Thsi letter: I recieve teh letters, then teh cat sat on teh mat.\r"
+          "Seperate them, please. Don't worry: the well-known children's book is mine.")
+    sg_pl = first(['ksiazka', 'komputre', 'zolw'], 'pl')
+    sg_en = first(['thsi', 'recieve', 'teh', 'seperate', 'wrold'], 'en')
+    cwrd.write(os.path.join(run, 'Polski.cwr'), chars(PL), minor=5, lang=2)
+    cwrd.write(os.path.join(run, 'English.cwr'), chars(EN), minor=5, lang=1)
+    kpl, npl = spell_text('pl', int(os.environ.get('SPELL_WORDS', '2000')), 3)
+    ken, nen = spell_text('en', int(os.environ.get('SPELL_WORDS', '2000')), 5)
+    cwrd.write(os.path.join(run, 'Kpl.cwr'), chars(kpl), minor=5, lang=2)
+    cwrd.write(os.path.join(run, 'Words.cwr'), chars(ken), minor=5, lang=1)
+    s.words = {'Kpl.cwr': npl, 'Words.cwr': nen}
+
+    s.console = ['CW DESK RESTART', 'CW KEYBOARD POLISH', 'CW KEYBOARD NOT POLISH']
+    cn = [0]
+
+    def cfg(c, live, loaded, marks, lang):
+        """(W60) 'L' $7B: "CW SPCFG n settings live loaded marks language"
+        (src/v/ovlclr.c)"""
+        cn[0] += 1
+        s.b += bytes([ord('L'), 0x7B])
+        s.W(30)
+        f = [cn[0], c, live, loaded] + ([marks, lang] if marks is not None else [])
+        s.console.append('CW SPCFG ' + ' '.join('%02X' % v for v in f))
+
+    s.W(90)
+    # (W60) no settings file and Veranda's keyboard setting Polish ('L' $7A
+    # turns PREFS_POLISH on and off): the new document is English
+    s.b += bytes([ord('L'), 0x7A])
+    s.W(30)
+    s.K(F7)
+    s.W(90)
+    done()                                      # (an empty document: nothing to check)
+    s.K(ESC)
+    s.W(30)
+    cfg(0x01, 1, 1, 0, 1)
+    s.b += bytes([ord('L'), 0x7A])
+    s.W(30)
+    # the Polish document: its marks, then Check spelling from the start
+    m = Model(chars(PL))
+    opn('P')
+    state(m, 'Polski.cwr')
+    if os.environ.get('SPELL_QUICK'):           # (a quick look: the lookups timed, F7)
+        s.L(0x7F, None)
+        s.states.pop()
+        s.W(30)
+        s.K(F7)
+        s.W(90)
+        s.stop('end')
+        return s, files
+    s.W(240)
+    s.stop('splivepl')
+    s.K(F7)
+    s.W(90)
+    found('Ksiazka', cased('Ksiazka', sg_pl['ksiazka']))
+    s.K(RET)                                    # Change: the first suggestion, in its case
+    rep(m, 'Ksiazka', cased('Ksiazka', sg_pl['ksiazka']))
+    s.W(60)
+    found('komputre', sg_pl['komputre'])
+    s.K(RET)
+    rep(m, 'komputre', sg_pl['komputre'])
+    s.W(60)
+    found('Prosze')
+    s.K(ord('i'), ALT)                          # Ignore
+    s.W(60)
+    found('zolw', sg_pl['zolw'])
+    s.W(30)
+    s.stop('spdlg')                             # (the panel with Polish suggestions)
+    s.K(RET)
+    rep(m, 'zolw', sg_pl['zolw'])
+    s.W(60)
+    found('Spoczynski')
+    s.K(ord('a'), ALT)                          # Add: the user's words
+    s.W(90)
+    found('ABCDEFG')
+    s.K(ord('g'), ALT)                          # Ignore all: the second one too
+    s.W(60)
+    done()
+    s.stop('spdone')
+    s.K(ESC)
+    s.W(30)
+    state(m, 'Polski.cwr')
+    s.K(ord('s'), CTRL)
+    s.W(60)
+    m.mod = False
+    state(m, 'Polski.cwr')
+    files['Polski.cwr'] = (list(m.c), list(m.p))
+    files['VERANDA/.SYSTEM/WRITE.UDIC'] = {'raw': b'spoczynski\n'}
+    # the English document: a right click on its first word, the pop-up
+    e = Model(chars(EN))
+    opn('E')
+    state(e, 'English.cwr')
+    s.W(240)
+    s.stop('spliveen')
+    s.P(76, 78)
+    s.b += b'G'
+    s.W(4)
+    s.b += b'U'
+    s.W(40)
+    s.stop('sppop')
+    s.K(ord('1'))
+    rep(e, 'Thsi', cased('Thsi', sg_en['thsi']))
+    s.W(60)
+    state(e, 'English.cwr')
+    s.menu(TOOLS, 3, shot='splang')             # (English: already the document's)
+    s.W(30)
+    s.K(CTRL_HOME, CTRL)
+    s.K(F7)
+    s.W(90)
+    found('recieve', sg_en['recieve'])
+    s.K(RET)
+    rep(e, 'recieve', sg_en['recieve'])
+    s.W(60)
+    found('teh', sg_en['teh'])
+    s.K(ord('l'), ALT)                          # Change all: the three of them, one step
+    rep(e, 'teh', sg_en['teh'], every=True)
+    s.W(90)
+    found('Seperate', cased('Seperate', sg_en['seperate']))
+    s.K(RET)
+    rep(e, 'Seperate', cased('Seperate', sg_en['seperate']))
+    s.W(60)
+    done()
+    s.K(ESC)
+    s.W(30)
+    state(e, 'English.cwr')
+    s.K(ord('z'), CTRL)                         # (Change all undone and redone: one step)
+    s.W(30)
+    s.K(ord('y'), CTRL)
+    s.W(30)
+    state(e, 'English.cwr')
+    # put aside with the dictionary's banks, back; Check spelling again
+    s.K(TAB, ALT)
+    s.W(120)
+    state(e, 'English.cwr')
+    s.K(CTRL_HOME, CTRL)
+    s.K(F7)
+    s.W(90)
+    done()
+    s.K(ESC)
+    s.W(20)
+    # a word typed, F8: its pop-up, the first suggestion
+    s.K(CTRL_END, CTRL)
+    e.move(len(e.c))
+    s.T(' Wrold')
+    e.type(' Wrold', step=False)
+    s.K(KEY_LEFT)
+    s.W(200)
+    s.K(F8)
+    s.W(40)
+    s.K(ord('1'))
+    rep(e, 'Wrold', cased('Wrold', sg_en['wrold']))
+    s.W(60)
+    state(e, 'English.cwr')
+    s.K(ord('s'), CTRL)
+    s.W(60)
+    e.mod = False
+    state(e, 'English.cwr')
+    files['English.cwr'] = (list(e.c), list(e.p))
+    # the lookups timed
+    s.L(0x7F, None)
+    s.states.pop()
+    s.W(30)
+    # Check spelling over 2,000 words: as Writer did it, from cold, again
+    for name, letter in (('Kpl.cwr', 'K'), ('Words.cwr', 'W')):
+        k = Model(chars(kpl if letter == 'K' else ken))
+        opn(letter)
+        state(k, name)
+        s.W(120)
+        for mode in (0x7E, 0x7D, None):
+            if mode:
+                s.L(mode, None)
+                s.states.pop()
+                s.W(20)
+            s.K(CTRL_HOME, CTRL)
+            s.K(F7)
+            s.W(60)
+            found('Zzzqx')
+            s.K(ESC)
+            s.W(20)
+        if letter == 'W':
+            # typing at the end, the marks on (timed: 'Q')
+            s.K(CTRL_END, CTRL)
+            k.move(len(k.c))
+            s.W(20)
+            for ch in ' I recieve the letter, teh end':
+                s.b += bytes([ord('Q'), ord(ch)])
+                k.type(ch, step=False)
+            s.W(120)
+            state(k, name, 'typing at the end of 2,000 words, the marks on')
+    # (W60) the settings, kept in VERANDA/.SYSTEM/WRITE.CFG: Tools > Mark
+    # misspellings off (kept at once), Tools > Spelling options: the
+    # language of new documents Polish (a screenshot); the program quits and
+    # starts again (the session's second part, CW.PL2: src/v/test.c,
+    # tools/desk): the settings as they were; typing: no marks, spelling's
+    # overlays not loaded; F7 on demand, in Polish; the options: spelling
+    # only when asked. "CW SPCFG n settings live loaded marks language"
+    s.menu(TOOLS, 2)                            # Mark misspellings: off
+    s.W(30)
+    cfg(0x05, 0, 1, None, None)                 # (the rows keep the counts they were last drawn with)
+    s.menu(TOOLS, 5)                            # Spelling options
+    s.W(30)
+    s.K(TAB)
+    s.K(TAB)
+    s.K(KEY_RIGHT)                              # (English, Polish, the keyboard's)
+    s.W(20)
+    s.stop('spopts')
+    s.K(RET)
+    s.W(30)
+    cfg(0x06, 0, 1, None, None)
+    s.b += bytes([ord('L'), 0x7C])              # quit, started again (src/v/test.c)
+    s.W(255)
+    s.split = len(s.b)
+    cn[0] = 0                                   # (the program's count starts again)
+    s.W(120)
+    cfg(0x06, 0, 0, 0, 0)                       # (a new document: no language yet)
+    s.T('Ksiazka i komputre.')
+    s.W(240)
+    s.stop('spnomark')
+    cfg(0x06, 0, 0, 0, 0)                       # typed, a pause: no marks (overlay 23 draws them: not loaded)
+    if not os.environ.get('CARD'):
+        # (on the host folder the part ends here: the emulator's host file
+        # system then refuses the swap's first file, which loading spelling
+        # takes a bank for after typing (the swap's folder removed by Quit
+        # and made again); the SD card image's run goes on)
+        files['VERANDA/.SYSTEM/WRITE.CFG'] = {'raw': b'WCFG\x01\x01\x02'}
+        s.stop('end')
+        return s, files
+    s.K(CTRL_HOME, CTRL)
+    s.K(F7)
+    s.W(90)
+    found('Ksiazka', cased('Ksiazka', sg_pl['ksiazka']))   # (Polish: the settings')
+    s.K(ESC)
+    s.W(30)
+    cfg(0x06, 0, 1, 0, 2)
+    s.menu(TOOLS, 5)
+    s.W(30)
+    s.K(ord(' '))                               # Check spelling as you work: off
+    s.W(20)
+    s.stop('spopts2')
+    s.K(RET)
+    s.W(30)
+    cfg(0x0E, 0, 1, 0, 2)
+    files['VERANDA/.SYSTEM/WRITE.CFG'] = {'raw': b'WCFG\x01\x03\x02'}
+    s.stop('end')
+    return s, files
+
+
+def session_nodict(run):
+    """(W61) spelling without the dictionaries (SESSION=nodict, NODICT=1:
+    only SPELL.OVL in /VERANDA/DICT, as Veranda's package has it now):
+    English typed, a pause: live checking finds no dictionary and stays
+    quiet (no box, no line: the keys after it go to the text);
+    Check spelling (F7): the panel says where the dictionaries come from
+    ("CW SPELL 03"); more typed, a pause: nothing said; Tools > Get
+    dictionaries: asked (Yes), START.REQ and UPDATE.REQ written in
+    /VERANDA/.SYSTEM (their bytes checked), Write put aside (the test
+    desktop brings it back); then English arrives while Write runs
+    (DICTNEW: EN.NEW renamed EN.DIC, 'L' $79) and F7 finds the first word
+    the dictionary has not"""
+    s = Script()
+    files = {}
+    s.spell = []
+    s.W(90)
+    m = Model()
+
+    def typ(t):
+        s.T(t)
+        m.type(t)
+    typ('Thsi is teh text. ')
+    s.W(240)                                    # (a pause: live checking, no dictionary)
+    s.L(1, m.state(''))
+    s.K(F7)
+    s.W(60)
+    s.spell.append([3, '', None])               # (no dictionary: the panel says where they come from)
+    s.stop('ndpanel')
+    s.K(ESC)
+    s.W(20)
+    typ('More teh words. ')
+    s.W(240)                                    # (nothing said again: no box took the keys)
+    s.L(2, m.state(''))
+    s.menu(TOOLS, 6)                            # Get dictionaries...
+    s.W(30)
+    s.stop('ndask')
+    s.click(*YES_BUTTON)                        # Yes: the requests, put aside, back
+    s.W(240)
+    s.L(3, m.state(''))
+    files['VERANDA/.SYSTEM/UPDATE.REQ'] = {'raw': b'dict\r\nback Veranda Write\r\n'}
+    files['VERANDA/.SYSTEM/START.REQ'] = {'raw': b'/VERANDA/APPS/Veranda Update\r\n'}
+    s.b += bytes([ord('L'), 0x79])              # English arrives (src/v/test.c)
+    s.W(30)
+    s.K(CTRL_HOME, CTRL)
+    s.K(F7)
+    s.W(120)
+    s.spell.append([1, 'Thsi', None])           # (found now: looked for again)
+    s.stop('ndfound')
+    s.K(ESC)
+    s.W(20)
+    s.stop('end')
+    return s, files
+
+
 HEAD = '{name}|Veranda Write, zażółć|{date}'       # (the page session's header)
 
 
@@ -1386,7 +1811,7 @@ def session_office(run):
     import office_fix
     s = Script()
     files = {}
-    ref = os.path.join('build', 'office-ref')
+    ref = os.path.join('build', 'office-ref', os.path.basename(os.path.normpath(run)))   # (one a run: the gate's screenshots run four at once)
     os.makedirs(ref, exist_ok=True)
     fx = office_fix.docx_features(os.path.join(run, 'Report.docx'))['counts']
     fo = office_fix.odt_features(os.path.join(run, 'Notes.odt'))['counts']
@@ -1657,14 +2082,20 @@ def main():
     run = a[0]
     stop = a[a.index('--stop') + 1] if '--stop' in a else None
     s, files = {'big': session_big, 'speed': session_speed, 'page': session_page,
-                 'office': session_office, 'redraw': session_redraw}.get(os.environ.get('SESSION'), session)(run)
+                 'office': session_office, 'redraw': session_redraw, 'spell': session_spell,
+                 'nodict': session_nodict}.get(os.environ.get('SESSION'), session)(run)
     b = bytes(s.b)
     if stop:
         b = b[:s.names[stop]]
-    b += b'S'
-    if len(b) > 4096:
-        sys.exit('script.py: the session is %d bytes (4096 at most: the test overlay has the rest of its bank)' % len(b))
-    open(os.path.join(run, 'CW.PLY'), 'wb').write(b)
+    # (W60) a session in two parts (s.split): the program quits after the
+    # first and starts again with the second, CW.PL2 (src/v/test.c)
+    sp = getattr(s, 'split', None)
+    parts = [b[:sp], b[sp:]] if sp is not None and len(b) > sp else [b]
+    parts[-1] += b'S'
+    for name, b in zip(('CW.PLY', 'CW.PL2'), parts):
+        if len(b) > 4096:
+            sys.exit('script.py: %s is %d bytes (4096 at most: the test overlay has the rest of its bank)' % (name, len(b)))
+        open(os.path.join(run, name), 'wb').write(b)
     def fexp(v):
         if isinstance(v, dict):
             return {'sha256': hashlib.sha256(v['raw']).hexdigest()} if 'raw' in v else v
@@ -1675,7 +2106,8 @@ def main():
                'console': getattr(s, 'console', []), 'pagestart': getattr(s, 'pagestart', None),
                'pagefile': getattr(s, 'pagefile', {}), 'office': getattr(s, 'office', []),
                'hfdate': getattr(s, 'hfdate', False), 'redraws': getattr(s, 'redraws', []),
-               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page', 'office', 'redraw')
+               'spell': getattr(s, 'spell', []), 'words': getattr(s, 'words', {}), 'once': getattr(s, 'once', []),
+               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page', 'office', 'redraw', 'spell', 'nodict')
                   else {})},
               open(os.path.join(run, 'expect.json'), 'w'), indent=1)
 

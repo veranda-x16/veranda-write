@@ -24,6 +24,7 @@
 #include <vrwin.h>
 #include "cwv.h"
 #include "view.h"
+#include "../spell.h"
 
 struct vrow vr[VMAX];
 unsigned int ta_bot = TA_END;
@@ -124,6 +125,18 @@ unsigned int __fastcall__ sp_w(unsigned int w)
 /*---------------------------------------------------------------
   drawing a row
  ---------------------------------------------------------------*/
+/* (W58) the unknown words' marks: their starts and ends in the row
+   (offsets from its place, in order: v/splive.c's mk_pre), their x as
+   the row is drawn (mk_rec), then the dotted lines (mk_dots) */
+unsigned char mk_n, mk_k;
+unsigned int mk_nx, mk_o[MK_O], mk_x[MK_O];
+
+static void __fastcall__ mk_rec(unsigned int x)
+{
+    mk_x[mk_k] = x;
+    mk_nx = ++mk_k < mk_n ? mk_o[mk_k] : 0xFFFF;
+}
+
 char run[100];                          /* (a run of a row; v_pbreak's and the bands' text: main RAM) */
 
 unsigned int __fastcall__ row_bot(unsigned char i)
@@ -168,6 +181,18 @@ void __fastcall__ draw_row(unsigned char i)
     cj = cur >= p && cur <= e ? (unsigned int)(cur - p) : 0xFFFF;
     cc_i = i;
     o = 0;
+    mk_n = mk_k = 0;
+    mk_nx = 0xFFFF;
+    if (sp_live) {
+        if (bank23) {
+            mk_pre(i);                  /* (W58: the row's unknown words: overlay 23) */
+            if (mk_n)
+                mk_nx = mk_o[0];
+        } else {
+            r->mk = 0x80;               /* (spelling not loaded: when it is, W59) */
+            sp_pend = 1;
+        }
+    }
     fl_rr(s);
     if ((r->l.f & LF_FIRST) && IS_LIST(ps->kind)) {
         /* a list's bullet or number, in the line's first style */
@@ -204,6 +229,8 @@ void __fastcall__ draw_row(unsigned char i)
                     rr_run();
                     n = 0;
                 }
+                if (o + j == mk_nx)
+                    mk_rec(x);
                 if (IS_KIND(c)) {
                     if (j + 3 > k)
                         break;
@@ -233,6 +260,8 @@ void __fastcall__ draw_row(unsigned char i)
             }
             if (o + j == cj)
                 cc_set(x);              /* (the cursor's character) */
+            if (o + j == mk_nx)
+                mk_rec(x);
             if (!n)
                 rx = x;
             run[n++] = c;
@@ -246,6 +275,8 @@ void __fastcall__ draw_row(unsigned char i)
     }
     if (o == cj)
         cc_set(x);                      /* (the cursor at the line's end: the document's) */
+    if (o == mk_nx)
+        mk_rec(x);
     if (n) {
         rr_s = run;
         rr_n = n;
@@ -259,6 +290,8 @@ void __fastcall__ draw_row(unsigned char i)
     rr_yhi = TA_BOT;
     rr_blit();
     dispBufferOn = ST_WR_FORE | ST_WR_BACK;
+    if (mk_k > 1)
+        mk_dots(i);                     /* (W58: the unknown words marked: overlay 23) */
     if (r->l.f & LF_PB)
         v_pbreak(i);                    /* (a page break's line: overlay 5) */
     if (r->g)

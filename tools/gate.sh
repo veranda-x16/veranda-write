@@ -46,7 +46,17 @@
 #    programs read it (tools/check_docx.py: the ZIP, the XML, LibreOffice);
 #    (W55: SESSION=redraw, under R49 at 512 KB) after every change of
 #    the layout, the text area as the edits drew it against the text
-#    wrapped again and drawn whole (src/v/test.c's redraw check);
+#    wrapped again and drawn whole (src/v/test.c's redraw check), the
+#    spelling marks included;
+#    (W56-W59: SESSION=spell, under R49 at 512 KB, on the host folder and
+#    an SD card image) spelling: live marks, Check spelling, the pop-up,
+#    the user's words, both languages, the lookups timed; (W60) the
+#    settings changed, the program quit and started again (the session's
+#    second part), the settings kept, no marks and nothing loaded;
+#    (W61: SESSION=nodict, R49 at 512 KB) spelling without the
+#    dictionaries: quiet while typing, F7's panel, Tools > Get dictionaries (the
+#    requests for Veranda's desktop and Veranda Update, put aside and
+#    back), a dictionary that arrives while Write runs found;
 #    tools/check.py: the states (characters, styles, paragraphs)
 #    and the files against the script's model; the timings
 # 4. screenshots: the session stopped at points (build/gate/*.png; the
@@ -103,7 +113,10 @@ cl65 -t none --cpu 65C02 -O -I "$SDK/include" -C "$SDK/cfg/app-c.cfg" -o build/d
 	"$SDK/lib/veranda.lib" || fail "the test desktop"
 $PY "$SDK/tools/vpack.py" --load 0x0801 -o build/desk/SHELL.cvt tools/desk/desk.hdr build/desk/desk.bin >/dev/null
 
-# the session on the host folder
+# the session on the host folder (W56: without the dictionaries, NODICT:
+# its Polish screenshot is compared with the font's drawing, which has no
+# spelling marks under its words; the other sessions have them)
+export NODICT=1
 tools/run.sh "$OUT/run" > /dev/null || fail "the session (host folder)"
 echo "== the session on the host folder"
 chk "$OUT/run" || fail "the session (host folder)"
@@ -145,6 +158,7 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 	chk "$S/out" || fail "the session (SD card, R49)"
 	ok "the same on an SD card image under R49"
 fi
+unset NODICT
 # stage 3 (W44-W48): pages, the header and footer, the page setup, PDF
 # (tools/script.py's session_page: SESSION=page) on a host folder under
 # R49 at 512 KB, its screenshots, then on an SD card image under R49
@@ -185,6 +199,33 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 	chk "$S/out" || fail "the page session (SD card, R49)"
 	ok "the same on an SD card image under R49"
 	unset SESSION RAM
+fi
+# (W61) spelling without the dictionaries, as Veranda's package has it now
+# (tools/script.py's session_nodict: SESSION=nodict, a host folder under
+# R49 at 512 KB, only SPELL.OVL in /VERANDA/DICT): live checking stays
+# quiet, F7's panel says where they come from, nothing said while typing;
+# Tools > Get dictionaries: START.REQ and UPDATE.REQ written,
+# Write put aside and back; English arrives while Write runs and F7 finds
+# a word; its screenshots
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=nodict RAM=512 NODICT=1 DICTNEW=1 UPDSTUB=1
+	tools/run.sh "$OUT/nodict" "" "$R49" > /dev/null || fail "the nodict session"
+	echo "== spelling without the dictionaries (host folder, R49, 512 KB)"
+	chk "$OUT/nodict" || fail "the nodict session"
+	ok "no dictionary: quiet while typing, F7 says where they come from, Get dictionaries hands over to Veranda Update, a dictionary that arrives is found"
+	NSHOTS="ndpanel ndask ndfound"
+	for s in $NSHOTS; do
+		tools/run.sh "$OUT/sshot-$s" "$s" "$R49" > "$OUT/sshot-$s.log" 2>&1 &
+	done
+	wait
+	for s in $NSHOTS; do
+		[ -f "$OUT/sshot-$s/dump.bin" ] || { tail -3 "$OUT/sshot-$s.log"; fail "the nodict session stopped at $s"; }
+		$PY tools/check.py "$OUT/sshot-$s" --partial > /dev/null || fail "the nodict session stopped at $s: its checks"
+		$PY "$SDK/tools/vram2png.py" --color "$OUT/sshot-$s/dump.bin" "$OUT/$s.png" 2>/dev/null || true
+		cp "$OUT/$s.png" build/shots/ 2>/dev/null || true
+	done
+	ok "screenshots: $OUT/{$(echo $NSHOTS | tr ' ' ,)}.png"
+	unset SESSION RAM NODICT DICTNEW UPDSTUB
 fi
 # stage 4 (W49-W54): .docx and .odt opened and exported (tools/script.py's
 # session_office: SESSION=office) on a host folder under R49 at 512 KB, its
@@ -251,6 +292,47 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 	ok "screenshots: $OUT/{$(echo $RSHOTS | tr ' ' ,)}.png; build/shots/"
 	unset SESSION RAM
 fi
+# spelling (W56-W59; tools/script.py's session_spell: SESSION=spell, under
+# R49 at 512 KB, on a host folder and on an SD card image): live marks in
+# a Polish and an English document, Check spelling (Change, Change all,
+# Ignore, Ignore all, Add: the user's words' file), the pop-up (a right
+# click, F8), the Tools menu, Alt+Tab; the lookups and Check spelling over
+# 2,000 words timed (as Writer did it, from cold, again); its screenshots
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=spell RAM=512
+	TIMEOUT=900 tools/run.sh "$OUT/spell" "" "$R49" > /dev/null || fail "the spell session (host folder)"
+	echo "== spelling (host folder, R49, 512 KB)"
+	chk "$OUT/spell" || fail "the spell session"
+	ok "live marks, Check spelling, the pop-up, the user's words, both languages, the settings kept after a restart"
+	SSHOTS="splivepl spdlg spdone spliveen sppop splang spopts spnomark"
+	for s in $SSHOTS; do
+		TIMEOUT=900 tools/run.sh "$OUT/sshot-$s" "$s" "$R49" > "$OUT/sshot-$s.log" 2>&1 &
+	done
+	wait
+	for s in $SSHOTS; do
+		[ -f "$OUT/sshot-$s/dump.bin" ] || { tail -3 "$OUT/sshot-$s.log"; fail "the spell session stopped at $s"; }
+		$PY tools/check.py "$OUT/sshot-$s" --partial > /dev/null || fail "the spell session stopped at $s: its checks"
+		$PY "$SDK/tools/vram2png.py" --color "$OUT/sshot-$s/dump.bin" "$OUT/$s.png" 2>/dev/null || true
+		cp "$OUT/$s.png" build/shots/ 2>/dev/null || true
+	done
+	ok "screenshots: $OUT/{$(echo $SSHOTS | tr ' ' ,)}.png; build/shots/"
+	S=$OUT/sdspell
+	CARD=1 tools/run.sh "$S/card" "" "$R49" --prepare > /dev/null || fail "the SD card's files (spell)"
+	mkdir -p "$S/out/VERANDA/.SYSTEM"
+	cp "$S/card/expect.json" "$S/out/"
+	$PY "$SDK/tools/vcard.py" make --mb 64 "$S/sd.img" "$S/card" >/dev/null || fail "vcard make"
+	cp "$SDK/bin/VERANDA.PRG" "$S/"
+	(cd "$S" && SDL_VIDEODRIVER=dummy timeout -s INT 1200 "$EMU" -rom "$R49" -sdcard sd.img -prg VERANDA.PRG \
+		-run -warp -sound none -echo -dump V -ram 512 > out/console.txt 2>&1) || true
+	[ -f "$S/dump.bin" ] || { tail -c 300 "$S/out/console.txt"; fail "SD card, spell: the session did not finish"; }
+	for f in Polski.cwr English.cwr VERANDA/.SYSTEM/WRITE.UDIC VERANDA/.SYSTEM/WRITE.CFG; do
+		$PY "$SDK/tools/vcard.py" get "$S/sd.img" "$f" "$S/out/$f" >/dev/null || fail "SD card, spell: no $f"
+	done
+	echo "== spelling on an SD card image (R49, 512 KB)"
+	chk "$S/out" || fail "the spell session (SD card, R49)"
+	ok "the same on an SD card image under R49"
+	unset SESSION RAM
+fi
 # the per-key timings (W43; tools/speed.sh: SESSION=speed, a host folder
 # under R49 at 512 KB): typing at a document's end, in a long paragraph,
 # in styles, Backspace, Return, one-line paragraphs, a 400 KB document;
@@ -297,4 +379,4 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 		ok "the big document at $R KB (the original untouched, a stale swap removed)"
 	done
 fi
-echo "GATE stage 4 (.docx and .odt) + stage 3 (pages, PDF) + stage 2 + geoWrite + big documents + Polish + redraw: PASS"
+echo "GATE stage 4 (.docx and .odt) + stage 3 (pages, PDF) + stage 2 + geoWrite + big documents + Polish + redraw + spelling: PASS"

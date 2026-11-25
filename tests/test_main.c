@@ -32,6 +32,7 @@
 #include <string.h>
 #include "../src/cbpriv.h"
 #include "host.h"
+#include "../src/spell.h"
 
 static int fails, checks;
 #define CHECK(c, ...) do { ++checks; if (!(c)) { ++fails; printf("FAIL %s:%d: ", __FILE__, __LINE__); \
@@ -838,8 +839,9 @@ static void test_file(void)
     saved = cur_m;
     flen = 0;
     CHECK(fmt_save(wr, decpos[ndec / 2]) == 0, "save");
-    CHECK(!memcmp(file, "CWRD\1\4", 6), "the header (1.4)");
+    CHECK(!memcmp(file, "CWRD\1\5", 6), "the header (1.5)");
     CHECK(!memcmp(file + 8, "INFO", 4) && file[22] == CS_L10, "INFO: the set ISO-8859-16 (1.3)");
+    CHECK(file[23] == fmt_lang, "INFO: the language (1.5)");
     doc_new();
     fpos = 0;
     e = fmt_load(rd);
@@ -976,7 +978,18 @@ static void test_file(void)
                 break;
             }
         flen = 0;
-        CHECK(fmt_save(wr, 0) == 0 && file[5] == 4 && file[22] == CS_L10, "Polish: saved as 1.4, ISO-8859-16");
+        CHECK(fmt_save(wr, 0) == 0 && file[5] == 5 && file[22] == CS_L10, "Polish: saved as 1.5, ISO-8859-16");
+        /* (1.5, W57) the language kept: saved, read back; a 1.4 file's: not said */
+        fmt_lang = LANG_PL;
+        flen = 0;
+        CHECK(fmt_save(wr, 0) == 0 && file[23] == LANG_PL, "the language saved (1.5)");
+        fmt_lang = 0;
+        fpos = 0;
+        CHECK(fmt_load(rd) == 0 && fmt_lang == LANG_PL, "the language read back: %u", fmt_lang);
+        file[23] = 0;
+        file[5] = 4;
+        fpos = 0;
+        CHECK(fmt_load(rd) == 0 && fmt_lang == 0, "a 1.4 file: no language");
         doc_new();
         fpos = 0;
         CHECK(fmt_load(rd) == 0 && fmt_cs == CS_L10 && !fmt_lost, "Polish: read back (set %u, %u lost)", fmt_cs, fmt_lost);
@@ -2054,7 +2067,7 @@ static void test_pagesetup(void)
     memcpy(&a, &pgs, PGS_N);
     flen = 0;
     e = fmt_save(wr, 0);
-    CHECK(!e && file[4] == 1 && file[5] == 4, "page: saved %u, version %u.%u", e, file[4], file[5]);
+    CHECK(!e && file[4] == 1 && file[5] == CW_MINOR, "page: saved %u, version %u.%u", e, file[4], file[5]);
     for (k = 8, i = 0; k + 8 <= flen; k += 8 + (file[k + 4] | (unsigned long)file[k + 5] << 8)) {
         if (!memcmp(file + k, "PAGE", 4)) {
             CHECK(file[k + 4] == PGS_N && file[k + 5] == 0, "page: PAGE's length %u", file[k + 4]);
@@ -2361,6 +2374,7 @@ static void test_pdf_big(void)
 }
 
 #include "test_office.c"
+#include "test_spell.c"
 
 int main(int argc, char **argv)
 {
@@ -2377,6 +2391,18 @@ int main(int argc, char **argv)
     }
     if (argc > 1)
         rnd_s = strtoul(argv[1], 0, 10);
+    sw_init();
+    ul_init();
+    doc_new();
+    if (getenv("CW_SUGG")) {                /* (tools/script.py: the suggestions) */
+        sugg_list();
+        return 0;
+    }
+    if (getenv("CW_SPELL_ONLY")) {           /* (the spelling tests alone) */
+        test_spell();
+        printf("%d checks, %d failures\n", checks, fails);
+        return fails != 0;
+    }
     test_cbuf();
     sw_init();
     ul_init();
@@ -2412,6 +2438,8 @@ int main(int argc, char **argv)
         test_pdf_big();
     if (!fails)
         test_office();
+    if (!fails)
+        test_spell();
     printf("%d checks, %d failures\n", checks, fails);
     return fails != 0;
 }
