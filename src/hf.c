@@ -20,6 +20,9 @@
 char hf_part[3][HF_OUT];
 const char *hf_name;
 char hf_date[24];
+#ifdef CW_HOST
+unsigned char hf_np;
+#endif
 
 static char *o, *oe;
 
@@ -72,8 +75,10 @@ void FASTCALL hf_make(const char *s, unsigned int pg, unsigned int n)
                 s += l;
                 if (f == 0)
                     put_n(pg);
-                else if (f == 1)
+                else if (f == 1) {
                     put_n(n);
+                    hf_np = 1;          /* (W55: the view draws its bands again when the count changes) */
+                }
                 else
                     put(f == 2 ? hf_date : hf_name ? hf_name : "");
                 continue;

@@ -2360,10 +2360,21 @@ static void test_pdf_big(void)
     pgs.head[0] = pgs.foot[0] = 0;
 }
 
+#include "test_office.c"
+
 int main(int argc, char **argv)
 {
     if (argc > 3 && !strcmp(argv[1], "gw"))
         return gw_file(argv[2], argv[3]);
+    if (argc > 3 && !strcmp(argv[1], "ox"))
+        return ox_file(argv[2], argv[3]);
+    if (argc > 3 && !strcmp(argv[1], "oz"))
+        return oz_file(argv[2], argv[3]);
+    if (argc > 1 && !strcmp(argv[1], "office")) {
+        test_office();                  /* (stage 4's alone) */
+        printf("%d checks, %d failures\n", checks, fails);
+        return fails != 0;
+    }
     if (argc > 1)
         rnd_s = strtoul(argv[1], 0, 10);
     test_cbuf();
@@ -2399,6 +2410,8 @@ int main(int argc, char **argv)
         test_pdf();
     if (!fails)
         test_pdf_big();
+    if (!fails)
+        test_office();
     printf("%d checks, %d failures\n", checks, fails);
     return fails != 0;
 }

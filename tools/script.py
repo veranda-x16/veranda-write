@@ -43,6 +43,7 @@ NM_FLAGS = [0, 1, 1, 1, 2, 0, 0]
 PF_ALIGN, PF_INDENT, PF_SPACING, PF_AFTER = 1, 2, 3, 4
 TB_Y, TB_ALIGN, TB_LIST, TB_INDENT, TB_NAME = 32, 240, 320, 368, 416   # the toolbar (src/v/cwv.h)
 YES_BUTTON = (255, 271)                 # a Yes/No box's Yes (the default box, centred)
+NO_BUTTON = (319, 271)                  # a Yes/No/Cancel box's No (its middle icon)
 # the menu bar (src/v/menus.c, stage 3: Insert after Edit)
 APPM, FILEM, EDIT, INSERT, TEXT, STYLE, FORMAT, FONT, SIZE = range(9)
 
@@ -371,6 +372,9 @@ class Script:
 
     def W(self, n):
         self.b += bytes([ord('W'), n])
+
+    def M(self, m):
+        self.b += bytes([ord('M'), m])
 
     def H(self, n):
         self.b += bytes([ord('H'), n & 255])
@@ -1199,6 +1203,9 @@ def session_speed(run):
     return s, files
 
 
+HEAD = '{name}|Veranda Write, zażółć|{date}'       # (the page session's header)
+
+
 def session_page(run):
     """stage 3 (SESSION=page; W44-W48): page breaks typed (Insert > Page
     break, Ctrl+Return), the header and footer (Insert > Header and
@@ -1235,7 +1242,7 @@ def session_page(run):
     # the header and footer: the panel at the header
     s.menu(INSERT, 2)                           # Insert > Header and footer...
     s.W(20)
-    s.T('{name}|Veranda Write|{date}')
+    s.T(HEAD.encode('iso8859_16'))                # (Polish in it: the bands draw it in Gate Sans 12)
     s.K(TAB)
     s.T('Page {page} of {pages}')
     s.K(TAB)
@@ -1271,7 +1278,7 @@ def session_page(run):
     s.L(4, m.state('Pages.cwr', 3))
     files['Pages.cwr'] = (list(m.c), list(m.p))
     page = {'paper': 1, 'flags': 1, 'w': 12240, 'h': 15840, 'top': 1800, 'bottom': 1417, 'left': 1417,
-            'right': 1417, 'head': '{name}|Veranda Write|{date}', 'foot': 'Page {page} of {pages}'}
+            'right': 1417, 'head': HEAD, 'foot': 'Page {page} of {pages}'}
     s.K(ord('n'), CTRL)
     s.W(20)
     s.K(ord('o'), CTRL)
@@ -1291,7 +1298,7 @@ def session_page(run):
     pdfs.append({'path': 'DOCUMENTS/Pages.pdf', 'pages': 3, 'size': [612, 792],
                  'texts': ['Page one of a document in pages.', POLISH.replace('\r', ' '),
                            'Page three, after Ctrl+Return.'],
-                 'on': [[2, 'Veranda Write'], [2, 'Pages'], [2, 'Page 2 of 3'], [3, 'Page 3 of 3'],
+                 'on': [[2, 'Veranda Write'], [2, 'zażółć'], [2, 'Pages'], [2, 'Page 2 of 3'], [3, 'Page 3 of 3'],
                         [2, 'Page two, after a page break from the menu.']],
                  'off': [[1, 'Veranda Write'], [1, 'Page 1 of 3']]})
     # older documents: 1.1 (paragraph styles), 1.2 (a page break), 1.3 (Polish)
@@ -1359,7 +1366,288 @@ def session_page(run):
     s.console = ['CW PDF 0', 'CW PDF 3']
     s.pagestart = {'state': 13, 'doc': 'XBIG.cwr', 'pdf': 'DOCUMENTS/XBIG.pdf', 'page': 5}
     s.pagefile = {'Pages.cwr': {'page': page, 'pbreaks': 2}}
+    s.hfdate = True                             # (the header's {date} drawn whole, inside the text)
     return s, files
+
+
+def session_office(run):
+    """stage 4 (SESSION=office; W49-W54): a Word document (Report.docx,
+    tools/office_fix.py's: every feature, Polish, a table, a picture, a
+    note, a comment, tracked changes, a header and a footer, Letter)
+    opened (the conversion's note), exported as Word and as OpenDocument
+    into /DOCUMENTS; an OpenDocument text (Notes.odt) opened; a big Word
+    document (Big report.docx: OX_BIG bytes of document.xml, 600,000 by
+    default) opened and exported both ways, timed. Each state against the
+    host's conversion of the same file (build/host/test_cw ox: the same
+    code); each exported file read back on the host (the same document,
+    its page setup) and checked as other programs read it
+    (tools/check_docx.py: its ZIP, its XML, LibreOffice's text)"""
+    import subprocess
+    import office_fix
+    s = Script()
+    files = {}
+    ref = os.path.join('build', 'office-ref')
+    os.makedirs(ref, exist_ok=True)
+    fx = office_fix.docx_features(os.path.join(run, 'Report.docx'))['counts']
+    fo = office_fix.odt_features(os.path.join(run, 'Notes.odt'))['counts']
+
+    def note(kind, c):
+        """the test build's log of the conversion's counts (src/v/oxnote.c)"""
+        return 'CW NOTE %d %s' % (kind, ' '.join('%d' % c.get(k, 0) for k in
+                                                 ('tables', 'pics', 'boxes', 'notes', 'comments', 'changes', 'fields',
+                                                  'lost')))
+    office_fix.docx_big(os.path.join(run, 'Big report.docx'), int(os.environ.get('OX_BIG', '600000')))
+
+    def model(name):
+        out = os.path.join(ref, name + '.cwr')
+        r = subprocess.run([os.environ.get('TEST_CW', 'build/host/test_cw'), 'ox', os.path.join(run, name), out],
+                           capture_output=True)
+        if r.returncode:
+            sys.exit('script.py: the host does not convert %s' % name)
+        d = cwrd.read(out)
+        m = Model(d.chars(), d.paras())
+        m.mod = True
+        return m, d
+
+    def opn(letter, name, note, discard=True, shot=None):
+        s.K(ord('o'), CTRL)
+        s.W(40)
+        if discard:
+            s.click(*NO_BUTTON)                 # (the changes to the converted document: not saved)
+            s.W(40)
+        s.K(ord(letter))
+        s.W(10)
+        s.Z()
+        s.K(RET)
+        s.W(60)
+        s.Y(note)
+        if shot:
+            s.stop(shot)
+
+    def export(item, t, n, m, shot=None):
+        s.menu(FILEM, item)                     # File > Export as Word, as OpenDocument
+        s.W(40)
+        if shot:
+            s.stop(shot)
+        s.Z()
+        s.K(RET)
+        s.W(60)
+        s.Y(t)
+        s.L(n, m.state(''))
+    s.W(90)
+    m1, d1 = model('Report.docx')
+    opn('R', 'Report.docx', 'd', discard=False, shot='oxnote')
+    s.K(RET)                                    # (the note's box: OK)
+    s.W(30)
+    s.L(1, m1.state(''))
+    s.stop('oxdoc')
+    export(6, 'w', 2, m1, shot='oxsave')
+    export(7, 'v', 3, m1)
+    m2, d2 = model('Notes.odt')
+    opn('N', 'Notes.odt', 'o', shot='oxodt')
+    s.K(RET)
+    s.W(30)
+    s.L(4, m2.state(''))
+    m3, d3 = model('Big report.docx')
+    opn('B', 'Big report.docx', 'b')            # (no note: nothing in it changed)
+    s.L(5, m3.state(''))
+    export(6, 'x', 6, m3)
+    export(7, 'y', 7, m3)
+    s.stop('end')
+    s.office = [{'path': 'DOCUMENTS/Report.docx', 'state': 2, 'page': d1.page},
+                {'path': 'DOCUMENTS/Report.odt', 'state': 3, 'page': d1.page},
+                {'path': 'DOCUMENTS/Big report.docx', 'state': 6, 'page': d3.page},
+                {'path': 'DOCUMENTS/Big report.odt', 'state': 7, 'page': d3.page}]
+    s.console = ['CW PDF 0', note(1, fx), note(2, fo), note(1, {})]
+    return s, files
+
+
+def session_redraw(run):
+    """the partial redraw against a full one (SESSION=redraw; W55): after
+    each change of the layout that changes no text, and after typing, the
+    text area as the edits drew it must be what a full drawing draws
+    ('L' n + $80: src/v/test.c's "CW REDRAW n rows first last"). The case
+    found on the X16 first (a Polish paragraph made Heading 1, then Body:
+    the large lines left under the small ones), then a paragraph in the
+    middle (the rows below moving up and down, the bottom's rows freed)
+    and one scrolled partly off the top, each by: the Style menu, the
+    toolbar's pop-up, Larger and Smaller, the Size and Font menus, Bold,
+    Italic, Underline, alignment, indents, line spacing, space after, a
+    list on and off, the page setup's margin, undo and redo; with and
+    without a selection"""
+    s = Script()
+    s.W(90)
+    n = [0]
+    chars = [0]
+
+    def V():
+        n[0] += 1
+        s.stop('v%d' % n[0])                    # (a screenshot before each check: --stop v12)
+        if os.environ.get('NOCHECK'):
+            return
+        s.L(0x80 | n[0], None)
+        s.states.pop()                          # (not a state: test.c's redraw check)
+        s.redraws.append(n[0])
+    s.redraws = []
+
+    def typ(t):
+        b = t.encode('iso8859_16')
+        s.T(b)
+        chars[0] += len(b)
+    pl = 'W niedalekim czasie dołożyli do szybkiego stołu parę liści które mogą być'
+    # the X16's case: typed, selected, Heading 1, Body, at the document's end
+    typ(pl)
+    V()
+    s.K(ord('a'), CTRL)                         # selected
+    V()
+    s.menu(STYLE, 1)                            # Heading 1: 4 lines of 27 points
+    s.stop('rdhead')
+    V()
+    s.menu(STYLE, 0)                            # Body again
+    s.stop('rdbug')
+    V()
+    s.menu(STYLE, 2)                            # Heading 2, Heading 1, Body: grows and shrinks
+    V()
+    s.menu(STYLE, 1)
+    V()
+    s.menu(STYLE, 0)
+    V()
+    s.K(ord('z'), CTRL)                         # undone, redone
+    V()
+    s.K(ord('y'), CTRL)
+    V()
+    # text after it: the paragraph in the middle, the rows below moving
+    s.K(CTRL_END, CTRL)
+    typ('\r' + pl + ' Its second paragraph, in Body.')
+    for i in range(14):
+        typ('\rRow %d of the filler.' % i)
+    typ('\r' + pl + ' The paragraph scrolled off the top.')
+    for i in range(26):
+        typ('\rLine %d under it.' % i)
+    V()
+    s.K(CTRL_HOME, CTRL)                        # the first paragraph, no selection
+    V()
+    for k in (1, 0, 3, 2, 0):                   # Heading 1, Body, Heading 3, Heading 2, Body
+        s.menu(STYLE, k)
+        V()
+    s.popup(TB_NAME + 20, 1)                    # the toolbar's pop-up: Heading 1, Body
+    V()
+    s.popup(TB_NAME + 20, 0)
+    V()
+    s.menu(STYLE, 5)                            # a bulleted list, Body
+    V()
+    s.menu(STYLE, 0)
+    V()
+    for k in ((ord('c'), CTRL | SHIFT), (ord('r'), CTRL | SHIFT), (ord('j'), CTRL), (ord('l'), CTRL)):
+        s.K(*k)                                 # centred, right, justified, left
+        V()
+    for item in (4, 4, 5, 5, 8, 7, 6, 9, 9):    # indents, spacing, space after
+        s.menu(FORMAT, item)
+        V()
+    # a selection: the first paragraph's first two lines (Shift+Down)
+    s.M(SHIFT)
+    s.K(KEY_DOWN)
+    s.K(KEY_DOWN)
+    s.M(0)
+    V()
+    s.K(ord('e'), CTRL)                         # Larger, Larger, Smaller, Smaller
+    V()
+    s.K(ord('e'), CTRL)
+    V()
+    s.K(ord('e'), CTRL | SHIFT)
+    V()
+    s.K(ord('e'), CTRL | SHIFT)
+    V()
+    s.menu(SIZE, 3)                             # Size > 27, Size > 9, Size > 12
+    V()
+    s.menu(SIZE, 0)
+    V()
+    s.menu(SIZE, 1)
+    V()
+    s.menu(FONT, 1)                             # Gate Mono, Gate Sans
+    V()
+    s.menu(FONT, 2)
+    V()
+    for k in ('b', 'i', 'u', 'b', 'i', 'u'):    # bold, italic, underline on and off
+        s.K(ord(k), CTRL)
+        V()
+    s.menu(STYLE, 1)                            # with the selection: Heading 1, Body
+    V()
+    s.menu(STYLE, 0)
+    V()
+    for _ in range(4):                          # undone and redone
+        s.K(ord('z'), CTRL)
+        V()
+    for _ in range(4):
+        s.K(ord('y'), CTRL)
+        V()
+    # the third long paragraph partly off the top: its last line the top row
+    s.K(CTRL_END, CTRL)
+    V()
+    for _ in range(27):
+        s.K(KEY_UP)
+    s.W(10)
+    s.L(2, {'chars': chars[0]})
+    s.stop('rdtop')
+    V()
+    s.stop('rdtopv')
+    for k in (1, 0, 2, 0):                      # Heading 1, Body, Heading 2, Body
+        s.menu(STYLE, k)
+        if k == 1 and 'rdtop1' not in s.names:
+            s.stop('rdtop1')
+        V()
+    s.menu(FORMAT, 4)                           # indented, back
+    V()
+    s.menu(FORMAT, 5)
+    V()
+    s.menu(FORMAT, 8)                           # double spacing, single
+    V()
+    s.menu(FORMAT, 6)
+    V()
+    s.K(ord('z'), CTRL)
+    V()
+    s.K(ord('y'), CTRL)
+    V()
+    # the page setup: the left margin 2 cm more, then back (every line wrapped again)
+    s.K(CTRL_HOME, CTRL)
+    for d in (KEY_RIGHT, KEY_LEFT):
+        s.menu(FILEM, 4)
+        s.W(20)
+        s.K(KEY_DOWN)
+        s.K(KEY_DOWN)
+        s.K(KEY_DOWN)
+        for _ in range(20):
+            s.K(d)
+        s.K(RET)
+        s.W(30)
+        V()
+    # a footer (drawn under the document's last line): typing at the end
+    # wraps a line over it; the last paragraph grows and shrinks over it
+    s.menu(INSERT, 2)                           # Insert > Header and footer...
+    s.W(20)
+    s.K(TAB)
+    s.T('Page {page} of {pages}')
+    s.K(RET)
+    s.W(30)
+    V()
+    s.K(CTRL_END, CTRL)
+    typ(' and more words to wrap onto a line of its own')
+    V()
+    for k in (1, 0, 3, 0):
+        s.menu(STYLE, k)
+        V()
+    s.K(ord('a'), CTRL)                         # all of it: Heading 2, Body, undone, redone
+    s.menu(STYLE, 2)
+    V()
+    s.menu(STYLE, 0)
+    V()
+    s.K(ord('z'), CTRL)
+    V()
+    s.K(ord('y'), CTRL)
+    V()
+    s.L(1, {'chars': chars[0]})
+    s.stop('rdend')
+    return s, {}
 
 
 def main():
@@ -1368,14 +1656,14 @@ def main():
         sys.exit(__doc__)
     run = a[0]
     stop = a[a.index('--stop') + 1] if '--stop' in a else None
-    s, files = {'big': session_big, 'speed': session_speed, 'page': session_page}.get(os.environ.get('SESSION'),
-                                                                                    session)(run)
+    s, files = {'big': session_big, 'speed': session_speed, 'page': session_page,
+                 'office': session_office, 'redraw': session_redraw}.get(os.environ.get('SESSION'), session)(run)
     b = bytes(s.b)
     if stop:
         b = b[:s.names[stop]]
     b += b'S'
-    if len(b) > 5120:
-        sys.exit('script.py: the session is %d bytes (5120 at most: overlay 17 has the rest of its bank)' % len(b))
+    if len(b) > 4096:
+        sys.exit('script.py: the session is %d bytes (4096 at most: the test overlay has the rest of its bank)' % len(b))
     open(os.path.join(run, 'CW.PLY'), 'wb').write(b)
     def fexp(v):
         if isinstance(v, dict):
@@ -1385,8 +1673,10 @@ def main():
                'stops': list(s.names), 'labels': getattr(s, 'labels', {}), 'lossy': getattr(s, 'lossy', {}),
                'pdfs': getattr(s, 'pdfs', []), 'absent': getattr(s, 'absent', []),
                'console': getattr(s, 'console', []), 'pagestart': getattr(s, 'pagestart', None),
-               'pagefile': getattr(s, 'pagefile', {}),
-               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page') else {})},
+               'pagefile': getattr(s, 'pagefile', {}), 'office': getattr(s, 'office', []),
+               'hfdate': getattr(s, 'hfdate', False), 'redraws': getattr(s, 'redraws', []),
+               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page', 'office', 'redraw')
+                  else {})},
               open(os.path.join(run, 'expect.json'), 'w'), indent=1)
 
 if __name__ == '__main__':

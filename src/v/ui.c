@@ -304,7 +304,7 @@ static void pick_size(unsigned char i)
 void m_about(void)
 {
     GotoFirstMenu();
-    message("Veranda Write 0.3 (stage 3): a word processor.", "MIT licence, (c) 2026 Marcin Spoczynski");
+    message("Veranda Write 0.4 (stage 4): a word processor.", "MIT licence, (c) 2026 Marcin Spoczynski");
 }
 
 static void __fastcall__ set_named(unsigned char k)
@@ -326,7 +326,9 @@ static void m_find(void) { GotoFirstMenu(); t_arg = 0; CALL9(fp_open); }
 static void m_pagesetup(void) { GotoFirstMenu(); t_arg = 0; callb(bank16, pp_open); }
 static void m_headfoot(void) { GotoFirstMenu(); t_arg = 5; callb(bank16, pp_open); }
 static void m_pbreak(void) { GotoFirstMenu(); callb(bank14, t_pbreak); }
-static void m_pdf(void) { GotoFirstMenu(); callb(bank16, t_pdf); }
+static void m_pdf(void) { GotoFirstMenu(); t_arg = 0; callb(bank16, t_pdf); }
+static void m_docx(void) { GotoFirstMenu(); t_arg = 1; callb(bank16, t_pdf); }   /* (W52) */
+static void m_odt(void) { GotoFirstMenu(); t_arg = 2; callb(bank16, t_pdf); }
 static void m_replace(void) { GotoFirstMenu(); t_arg = 1; CALL9(fp_open); }
 static void m_findnext(void) { GotoFirstMenu(); CALL9(fp_next); }
 static void m_count(void) { GotoFirstMenu(); CALL9(t_count); }
@@ -335,9 +337,9 @@ static void m_date(void) { GotoFirstMenu(); CALL9(t_date); }
 
 /* the menus: a list made when its bar item opens (tools.c), each item's
    routine this one, with the item */
-static void (*const acts[29])(void) = {
+static void (*const acts[31])(void) = {
     m_about, m_count,
-    c_new, c_open, c_save, c_saveas, m_pagesetup, m_pdf, c_close, c_quit,
+    c_new, c_open, c_save, c_saveas, m_pagesetup, m_pdf, m_docx, m_odt, c_close, c_quit,
     m_undo, m_redo, m_cut, m_copy, m_paste, m_selall, m_find, m_findnext, m_replace, m_goto,
     m_pbreak, m_date, m_headfoot,
     m_plain, m_bold, m_italic, m_uline, m_larger, m_smaller,

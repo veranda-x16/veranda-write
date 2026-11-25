@@ -168,3 +168,12 @@ unsigned char FASTCALL cs_byte(unsigned int u)
     }
     return u < 0x100 ? (unsigned char)u : 0;
 }
+
+unsigned int FASTCALL cs_uni(unsigned char c)
+{
+    unsigned char i;
+    for (i = 0; i < 40; ++i)
+        if (cs_b[i] == c)
+            return cs_u[i];
+    return c;
+}

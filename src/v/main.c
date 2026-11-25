@@ -15,8 +15,10 @@
 #include <vrchoose.h>
 #include <vrpath.h>
 #include "cwv.h"
+#include "../office.h"
 
-unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16, bank17;
+unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16;
+unsigned char bank17, bank18, bank19, bank20, bank21, bank22, bankt;
 unsigned char cw_idle, follow;
 pos_t cur, anc;
 unsigned int goal_x = 0xFFFF;
@@ -34,6 +36,17 @@ unsigned long pdf_size;
 const char *pdf_title;
 unsigned char pdf_fh;                   /* its file (pdfx.c, pgpanel.c) */
 char pdf_name[64];                      /* its name (pgpanel.c: the dialog's) */
+/* stage 4's (W49-W54): the importers' (overlays 17 and 18 both read them) */
+unsigned char xm_vlen;                  /* the token's value's bytes (oxml.c) */
+unsigned char xm_skipa;                 /* (the reader's: this element's attributes not wanted) */
+struct oxcount oxc;                     /* what the conversion changed (oemit.c, v/oxnote.c) */
+unsigned char pr_t, em_ps, em_rs, def_ps;   /* the readers' and the emitter's (oimp.h) */
+unsigned char oz_err;                   /* (ozip.c's) */
+const char *pf_s;                       /* the page setup panel's field in Gate Sans 12 (pgview.c's pg_field) */
+unsigned int pf_x, pf_y, pf_w;
+unsigned char pf_ok;
+unsigned char oe_on, op_x;              /* the exporter's buffer's bytes; a value's (oexp.c, v/oparts.s) */
+unsigned long oe_size;                  /* (oexp.c's) */
 
 void set_status(const char *s)
 {
@@ -120,6 +133,30 @@ static unsigned char box(const void *t, const char *a, const char *b)
     return r;
 }
 
+/* a box of three lines: msg_a, msg_b, msg_c (the callers fill them:
+   v/oxnote.c's note of what a conversion changed) */
+char msg_c[40];
+static const unsigned char box3[] = {
+    DEF_DB_POS | 1,
+    DBVARSTR, TXT_LN_X, TXT_LN_1_Y, 0x0C,
+    DBVARSTR, TXT_LN_X, TXT_LN_2_Y, 0x0E,
+    DBVARSTR, TXT_LN_X, TXT_LN_3_Y, 0x10,
+    OK, DBI_X_0, DBI_Y_2,
+    0
+};
+
+void note3(void)
+{
+    Beep();
+    r5 = (unsigned int)msg_a;
+    r6 = (unsigned int)msg_b;
+    r7 = (unsigned int)msg_c;
+    view_cursor(0);
+    DoDlgBox((void *)box3);
+    need_view = 1;
+    status_dirty = 1;
+}
+
 void message(const char *a, const char *b)
 {
     Beep();
@@ -139,7 +176,7 @@ unsigned char yesnocancel(const char *a, const char *b)
 /* the Open and Save dialog (vrchoose.h), in overlay 3. It needs a RAM
    bank while it is open: one is kept for it from the start (dlg_bank),
    so that it opens even when the document has taken every other one */
-static const char types[] = "Documents:CWR CVT";
+static const char types[] = "Documents:CWR CVT DOCX ODT";
 static unsigned char dlg_bank;
 
 unsigned char __fastcall__ file_dlg(unsigned char mode, const char *title, char *name)
@@ -247,9 +284,21 @@ int main(void)
     bank15 = r1L;
     LoadOverlay(16, 0);
     bank16 = r1L;
-#ifdef CW_TEST
     LoadOverlay(17, 0);
     bank17 = r1L;
+    LoadOverlay(18, 0);
+    bank18 = r1L;
+    LoadOverlay(19, 0);
+    bank19 = r1L;
+    LoadOverlay(20, 0);
+    bank20 = r1L;
+    LoadOverlay(21, 0);
+    bank21 = r1L;
+    LoadOverlay(22, 0);
+    bank22 = r1L;
+#ifdef CW_TEST
+    LoadOverlay(TOVL, 0);
+    bankt = r1L;
 #endif
     appBank = bank1;
     MAPBANK(bank1);

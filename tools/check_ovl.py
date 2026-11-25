@@ -28,7 +28,7 @@ ALLOW = {
              '_t_named', '_t_format', '_t_body', '_fp_open', '_fp_key', '_fp_press', '_fp_next',
              '_t_count', '_t_goto', '_t_date', '_f_ldstep', '_t_popup',
              '_pg_loaddef', '_pp_key', '_pp_open', '_pp_press', '_t_pbreak', '_t_pdf'},
-    'pgpanel.o': {'_pg_loaddef'},
+    'pgpanel.o': {'_pg_loaddef', '_pg_export', '_pg_field'},
     'tools.o': {'_m_item'},     # (the lists' routine: the kernel calls it in appBank, overlay 1)
     'view.o': {'_v_all', '_v_frame', '_v_refresh', '_t_toolbar', '_v_fix_cursor', '_v_scroll',
                '_v_title', '_t_status'},

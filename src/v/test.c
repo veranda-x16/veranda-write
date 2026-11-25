@@ -1,4 +1,4 @@
-/* Veranda Write's gate: the test build's part (-DCW_TEST; overlay 17,
+/* Veranda Write's gate: the test build's part (-DCW_TEST; overlay 23,
    its variables and small entry points in main RAM: the test build's
    main RAM is the program's but for them, W48). test_start reads the session (CW.PLY,
    tools/script.py writes it) into a RAM bank and starts the player
@@ -18,6 +18,7 @@
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #include <string.h>
 #include "cwv.h"
+#include "view.h"
 
 extern unsigned char play_bank, play_st, play_t0[4];
 void play_go(void);
@@ -28,8 +29,8 @@ static char line[160];                  /* (main RAM: LogText reads it) */
 static unsigned char t_k;               /* (test_key's) */
 static char mk_w[16];                   /* (test_mark's: the caller's name, copied) */
 
-#pragma code-name ("OVERLAY17")
-#pragma rodata-name ("OVL17RO")
+#pragma code-name ("OVERLAY23")
+#pragma rodata-name ("OVL23RO")
 static unsigned char clk[4], armed, playing, lat_k, lats;
 static unsigned long lat_t0;
 static const char hex[] = "0123456789ABCDEF";
@@ -86,8 +87,8 @@ static void e_test_aside(void)
     LogText(line);
 }
 
-/* The session goes into this overlay's own bank after its code ($AC00
-   on: a bank fewer) */
+/* The session goes into this overlay's own bank after its code ($B000
+   on: a bank fewer; 4,096 bytes, tools/script.py) */
 static char ply[] = "CW.PLY";           /* (main RAM: the kernel reads it) */
 
 static void e_test_start(void)
@@ -99,9 +100,9 @@ static void e_test_start(void)
         LogText(line);
         return;
     }
-    FRead(h, (void *)0xAC00, 5120);
+    FRead(h, (void *)0xB000, 4096);
     FClose(h);
-    play_bank = bank17;
+    play_bank = bankt;
     play_go();
     playing = 1;
     asideVector = VR_FN(cw_aside);
@@ -202,15 +203,77 @@ static void log_state(void)
     sw_w0 = sw_writes;
 }
 
+/* (W55) the partial redraw against a full one: 'L' n + $80. The text
+   area's rows (TA_TOP .. TA_BOT, the page's cards) on both screens
+   hashed as the edits left them, the cursor hidden; then the text
+   wrapped again whole (lay_all) and the view drawn whole (v_all) and
+   hashed again: "CW REDRAW n rows first last", the
+   rows that differ (0: the edits drew what a full drawing draws). The
+   paper's bookkeeping (clr_y, clr_pg) put back as it was, so the next
+   edit is drawn as it would have been without the check */
+#pragma bss-name (push, "OVL23BSS")
+static unsigned char rh[TA_END - TA_TOP + 1];   /* (a row's hash, a byte: 4 KB for the session after it) */
+static unsigned int rd_y, rd_n, rd_first, rd_last, rd_cy, rd_cp, rd_h;
+static unsigned char rd_i, rd_s;
+#pragma bss-name (pop)
+
+static unsigned char __fastcall__ row_hash(unsigned int y)
+{
+    rd_h = y;
+    for (rd_s = 0; rd_s < 2; ++rd_s) {
+        dispBufferOn = rd_s ? ST_WR_BACK : ST_WR_FORE;
+        ReadRow(iobuf, PG_C0, PG_CW, y);
+        for (rd_i = 0; rd_i < PG_CW; ++rd_i)
+            rd_h = (rd_h << 3 | rd_h >> 13) ^ iobuf[rd_i];
+    }
+    dispBufferOn = ST_WR_FORE | ST_WR_BACK;
+    return (unsigned char)(rd_h ^ rd_h >> 8);
+}
+
+static void redraw_check(void)
+{
+    char *p = line;
+    cw_idle = 0;                        /* (the player waits: its frames count only when idle) */
+    view_cursor(0);
+    for (rd_y = TA_TOP; rd_y <= TA_BOT; ++rd_y)
+        rh[rd_y - TA_TOP] = row_hash(rd_y);
+    rd_cy = clr_y;
+    rd_cp = clr_pg;
+    lay_all();                          /* (the whole text wrapped again: a line table the edits left wrong shows too) */
+    view_all();
+    clr_y = rd_cy;
+    clr_pg = rd_cp;
+    rd_n = rd_first = rd_last = 0;
+    for (rd_y = TA_TOP; rd_y <= TA_BOT; ++rd_y)
+        if (rh[rd_y - TA_TOP] != row_hash(rd_y)) {
+            if (!rd_n++)
+                rd_first = rd_y;
+            rd_last = rd_y;
+        }
+    view_cursor(1);
+    memcpy(p, "CW REDRAW ", 10);
+    p = hexn(p + 10, test_log & 0x7F);
+    p = hexn(p, rd_n);
+    p = hexn(p, rd_first);
+    p = hexn(p, rd_last);
+    *p = 0;
+    test_log = 0;
+    LogText(line);
+}
+
 static void e_test_tick(void)
 {
+    unsigned char k;
     if (playing && !mouseSource) {
         play_go();                      /* (back from being put aside) */
         asideVector = VR_FN(cw_aside);
         strcpy(line, "CW BACK");        /* (the kernel reads it: main RAM) */
         LogText(line);
     }
-    if (test_log)
+    k = test_log;                       /* (once: the player sets it in the interrupt) */
+    if (k & 0x80)
+        redraw_check();
+    else if (k)
         log_state();
 }
 
@@ -298,17 +361,17 @@ void __fastcall__ test_mark(const char *what)
     for (i = 0; i < sizeof mk_w - 1 && what[i]; ++i)
         mk_w[i] = what[i];
     mk_w[i] = 0;
-    callb(bank17, e_test_mark);
+    callb(bankt, e_test_mark);
 }
 
 void __fastcall__ test_key(unsigned char k)
 {
     t_k = k;
-    callb(bank17, e_test_key);
+    callb(bankt, e_test_key);
 }
 
-void test_aside(void) { callb(bank17, e_test_aside); }
-void test_start(void) { callb(bank17, e_test_start); }
-void test_tick(void) { callb(bank17, e_test_tick); }
-void test_status(void) { callb(bank17, e_test_status); }
-void test_drawn(void) { callb(bank17, e_test_drawn); }
+void test_aside(void) { callb(bankt, e_test_aside); }
+void test_start(void) { callb(bankt, e_test_start); }
+void test_tick(void) { callb(bankt, e_test_tick); }
+void test_status(void) { callb(bankt, e_test_status); }
+void test_drawn(void) { callb(bankt, e_test_drawn); }

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Veranda Write's gate: stage 3 (stage 2's, and pages and PDF).
+# Veranda Write's gate: stage 4 (stage 3's, and .docx and .odt).
 #
 #   tools/gate.sh [SDK=<Veranda's installed SDK>] [SD=0: no SD card run]
 #
@@ -36,6 +36,17 @@
 #    and its PDF (timed), an export stopped by Esc, Go to page against the
 #    PDF's page (tools/check.py, tools/check_pdf.py: qpdf, pdfinfo,
 #    pdftotext);
+#    (stage 4, W49-W54: SESSION=office, under R49 at 512 KB, on the host
+#    folder and on an SD card image) a Word document opened (converted:
+#    its note), exported as Word and as OpenDocument, an OpenDocument
+#    text opened, a big Word document opened and
+#    exported both ways (timed: 600 KB of document.xml, 100 KB of text); each state against the host's conversion
+#    of the same file (build/host/test_cw ox), each exported file read back
+#    on the host (the same document, its page setup) and checked as other
+#    programs read it (tools/check_docx.py: the ZIP, the XML, LibreOffice);
+#    (W55: SESSION=redraw, under R49 at 512 KB) after every change of
+#    the layout, the text area as the edits drew it against the text
+#    wrapped again and drawn whole (src/v/test.c's redraw check);
 #    tools/check.py: the states (characters, styles, paragraphs)
 #    and the files against the script's model; the timings
 # 4. screenshots: the session stopped at points (build/gate/*.png; the
@@ -72,7 +83,7 @@ for f in "Gate Sans" "Gate Mono"; do        # (W38: with $A0-$FF; Veranda's own 
 	$PY tools/hifont.py "build/fonts/$f.cvt" "build/fonts/$f.cvt" || fail "tools/hifont.py: $f"
 done
 make -s test > "$OUT/unit.log" 2>&1 || { tail "$OUT/unit.log"; fail "make test"; }
-ok "unit tests: $(grep 'checks, ' "$OUT/unit.log" | tail -1); $(grep -c '^pdf ' "$OUT/unit.log") PDFs (tools/check_pdf.py)"
+ok "unit tests: $(grep 'checks, ' "$OUT/unit.log" | tail -1); $(grep -c '^pdf ' "$OUT/unit.log") PDFs (tools/check_pdf.py); $(grep -c '^office ' "$OUT/unit.log") .docx and .odt files (tools/check_office.py, tools/check_docx.py)"
 
 make -s veranda SDK="$SDK" > "$OUT/build.log" 2>&1 || { tail "$OUT/build.log"; fail "make veranda"; }
 make -s veranda-test SDK="$SDK" > "$OUT/build-test.log" 2>&1 || { tail "$OUT/build-test.log"; fail "make veranda-test"; }
@@ -175,6 +186,71 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 	ok "the same on an SD card image under R49"
 	unset SESSION RAM
 fi
+# stage 4 (W49-W54): .docx and .odt opened and exported (tools/script.py's
+# session_office: SESSION=office) on a host folder under R49 at 512 KB, its
+# screenshots, then on an SD card image under R49
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=office RAM=512
+	TIMEOUT=900 tools/run.sh "$OUT/office" "" "$R49" > /dev/null || fail "the office session (host folder)"
+	echo "== .docx and .odt (host folder, R49, 512 KB)"
+	chk "$OUT/office" || fail "the office session (host folder)"
+	ok "Word and OpenDocument documents opened (converted) and exported (read back, LibreOffice)"
+	OSHOTS="oxnote oxdoc oxsave oxodt"
+	for s in $OSHOTS; do
+		TIMEOUT=900 tools/run.sh "$OUT/oshot-$s" "$s" "$R49" > "$OUT/oshot-$s.log" 2>&1 &
+	done
+	wait
+	for s in $OSHOTS; do
+		[ -f "$OUT/oshot-$s/dump.bin" ] || { tail -3 "$OUT/oshot-$s.log"; fail "the office session stopped at $s"; }
+		$PY tools/check.py "$OUT/oshot-$s" --partial > /dev/null || fail "the office session stopped at $s: its states"
+		$PY "$SDK/tools/vram2png.py" --color "$OUT/oshot-$s/dump.bin" "$OUT/$s.png" 2>/dev/null || true
+		cp "$OUT/$s.png" build/shots/ 2>/dev/null || true
+	done
+	ok "screenshots: $OUT/{$(echo $OSHOTS | tr ' ' ,)}.png; build/shots/"
+	S=$OUT/sdoffice
+	tools/run.sh "$S/card" "" "$R49" --prepare > /dev/null || fail "the SD card's files (office)"
+	mkdir -p "$S/out/DOCUMENTS"
+	cp "$S/card/expect.json" "$S/out/"
+	$PY "$SDK/tools/vcard.py" make --mb 64 "$S/sd.img" "$S/card" >/dev/null || fail "vcard make"
+	cp "$SDK/bin/VERANDA.PRG" "$S/"
+	(cd "$S" && SDL_VIDEODRIVER=dummy timeout -s INT 900 "$EMU" -rom "$R49" -sdcard sd.img -prg VERANDA.PRG \
+		-run -warp -sound none -echo -dump V -ram 512 > out/console.txt 2>&1) || true
+	[ -f "$S/dump.bin" ] || { tail -c 300 "$S/out/console.txt"; fail "SD card, office: the session did not finish"; }
+	for f in "DOCUMENTS/Report.docx" "DOCUMENTS/Report.odt" "DOCUMENTS/Big report.docx" "DOCUMENTS/Big report.odt"; do
+		$PY "$SDK/tools/vcard.py" get "$S/sd.img" "$f" "$S/out/$f" >/dev/null || fail "SD card, office: no $f"
+	done
+	echo "== .docx and .odt on an SD card image (R49, 512 KB)"
+	chk "$S/out" || fail "the office session (SD card, R49)"
+	ok "the same on an SD card image under R49"
+	unset SESSION RAM
+fi
+# the partial redraw against a full one (W55; tools/script.py's
+# session_redraw: SESSION=redraw, a host folder under R49 at 512 KB): after
+# every change of the layout (paragraph styles, sizes, fonts, B I U,
+# alignment, indents, spacing, lists, the page setup, undo and redo,
+# with and without a selection, at the end, in the middle, scrolled off
+# the top, a footer with {pages}) the text area as the edits drew it
+# against the text wrapped again and drawn whole (src/v/test.c)
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=redraw RAM=512
+	TIMEOUT=900 tools/run.sh "$OUT/redraw" "" "$R49" > /dev/null || fail "the redraw session (host folder)"
+	echo "== the partial redraw against a full one (host folder, R49, 512 KB)"
+	chk "$OUT/redraw" || fail "the redraw session"
+	ok "every change drawn as a full drawing draws it"
+	RSHOTS="rdhead rdbug rdtop1 rdend"
+	for s in $RSHOTS; do
+		TIMEOUT=900 tools/run.sh "$OUT/rshot-$s" "$s" "$R49" > "$OUT/rshot-$s.log" 2>&1 &
+	done
+	wait
+	for s in $RSHOTS; do
+		[ -f "$OUT/rshot-$s/dump.bin" ] || { tail -3 "$OUT/rshot-$s.log"; fail "the redraw session stopped at $s"; }
+		$PY tools/check.py "$OUT/rshot-$s" --partial > /dev/null || fail "the redraw session stopped at $s: its checks"
+		$PY "$SDK/tools/vram2png.py" --color "$OUT/rshot-$s/dump.bin" "$OUT/$s.png" 2>/dev/null || true
+		cp "$OUT/$s.png" build/shots/ 2>/dev/null || true
+	done
+	ok "screenshots: $OUT/{$(echo $RSHOTS | tr ' ' ,)}.png; build/shots/"
+	unset SESSION RAM
+fi
 # the per-key timings (W43; tools/speed.sh: SESSION=speed, a host folder
 # under R49 at 512 KB): typing at a document's end, in a long paragraph,
 # in styles, Backspace, Return, one-line paragraphs, a 400 KB document;
@@ -221,4 +297,4 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 		ok "the big document at $R KB (the original untouched, a stale swap removed)"
 	done
 fi
-echo "GATE stage 3 (pages, headers and footers, PDF) + stage 2 + geoWrite + big documents + Polish: PASS"
+echo "GATE stage 4 (.docx and .odt) + stage 3 (pages, PDF) + stage 2 + geoWrite + big documents + Polish + redraw: PASS"

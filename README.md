@@ -5,16 +5,47 @@ desktop for the X16): several fonts and sizes on a page, bold, italic and
 underline, many levels of undo and redo, documents much larger than the
 X16's main memory, its own file format. A sibling of Veranda Calc.
 
-This is **stage 3** of the plan below (pages, headers and footers,
-PDF), with **geoWrite documents** opened (converted). MIT licence,
-Copyright (c) 2026 Marcin Spoczynski.
+This is **stage 4** of the plan below (Word and OpenDocument documents
+opened and exported), with stage 3's pages, headers and footers and PDF,
+and **geoWrite documents** opened (converted). MIT licence, Copyright (c)
+2026 Marcin Spoczynski.
 
 It was called **Commander Write** until Veranda 0.9.0 (DECISIONS W40).
 The repository keeps its name, `commander-write`; the program, its file
 (`Veranda Write.cvt`) and its menus are Veranda Write. Its GEOS class is
 still `CmdrWrite`, so documents made before open as they did.
 
-## Features (stages 1 to 3)
+## Features (stages 1 to 4)
+
+- **Word and OpenDocument documents open** (stage 4): File > Open lists
+  `.docx` and `.odt` files with the documents and converts one when it is
+  opened (the original is never written): it opens as *Untitled-name*,
+  Save as offers `name.cwr`, "Converted from Word" (or OpenDocument) in
+  the status bar and what was changed in a box. Kept: the text (Polish
+  and the rest of Veranda's set; a character it has not becomes `?`,
+  counted), paragraphs with their alignment, indents, spacing and line
+  spacing, Heading 1-3 (by the style's name in any language or its
+  outline level), quotations, bulleted and numbered lists, bold, italic,
+  underline, sizes (made Write's: 9, 12, 18, 27; Gate Mono for a
+  monospaced font, Gate Sans for the others), tabs, line breaks, page
+  breaks (and a paragraph's "page break before"), the paper and margins,
+  the header and the footer (one line each, with page numbers as
+  {page} and {pages}, "not on the first page"). Tables become their
+  text, a row a paragraph, its cells apart by tabs. Left out, and said:
+  pictures, drawings, formulas, text boxes, footnotes and endnotes,
+  comments, the deleted text of tracked changes (the inserted text is
+  kept: the changes accepted). A document of several hundred kilobytes
+  opens with 512 KB: nothing of the file is kept whole, it is read and
+  unpacked a little at a time.
+- **Export as Word and as OpenDocument** (stage 4, File > Export as Word
+  (.docx), Export as OpenDocument (.odt)): beside Export as PDF, by
+  default in `/DOCUMENTS` with the document's name; the document itself
+  stays a `.cwr`. The file holds the paragraphs with their styles, the
+  headings, the lists, the runs' fonts (Arial, Courier New for Gate Mono),
+  sizes, bold, italic and underline, tabs, page breaks, the page setup,
+  the header and the footer with their fields (page, pages, date, name),
+  Polish letters in UTF-8; Word and LibreOffice open it. It is written as
+  it goes; the status bar shows how far, Esc stops it.
 
 - **Pages** (stage 3): **File > Page setup** chooses the paper (A4 or US
   Letter) and the margins (in centimetres on A4, inches on Letter), kept
@@ -159,9 +190,10 @@ footer. The **Style** menu has the named styles, **Format** the alignment,
 the indent, the line spacing and the space after paragraphs, **Font**
 the installed fonts, **Size** the sizes of the current font; Word count
 is in the Veranda Write menu, Find, Replace and Go to page in Edit,
-Page setup and Export as PDF in File.
+Page setup, Export as PDF, Export as Word and Export as OpenDocument in
+File.
 
-## Limits (stage 3, documents larger than RAM)
+## Limits (stage 4, documents larger than RAM)
 
 - Text is ASCII and Veranda's set above it, ISO-8859-16: Polish (Ą Ć Ę
   Ł Ń Ó Ś Ź Ż, typed with right Alt and Veranda's Polish keyboard on),
@@ -242,6 +274,21 @@ Page setup and Export as PDF in File.
   inch. At 8 MHz a PDF takes up to a second a page: a 350 KB document of
   80 pages, its style changing every few words, in about a minute
   (820 KB of PDF).
+- **Word and OpenDocument**: what a file has beyond the features above is
+  left out (pictures, footnotes, comments ...: the note says which) or
+  made Write's: fonts other than monospaced ones become Gate Sans, sizes
+  the nearest of Write's, colours and tab stops are not kept (Write's
+  tabs are every half inch), line spacing is single, 1.5 or double, the
+  header and footer are the last section's (a `.docx`) or the document's
+  master page's (an `.odt`), not the first page's or even pages' own. A
+  file with more than 32 paragraph styles or 128 character styles gets
+  the nearest it can. Exported, a font other than Gate Sans and Gate Mono
+  is Arial (read back: Gate Sans); in an `.odt` two page breaks in a row
+  have an empty paragraph between them. The files are not compressed
+  (Word and LibreOffice read them; they are some times larger than
+  theirs). At 8 MHz a `.docx` of 600 KB of XML (about 100 KB of text)
+  opens in about a minute; exporting it takes about as long
+  (DECISIONS W54).
 - The Open dialog lists the geoWrite documents of the folder it opens in
   (read before it opens); in a folder chosen inside the dialog they are
   not listed (W27). Converting one takes an overlay's RAM bank: the
@@ -340,9 +387,33 @@ opens `.CWR` documents with it.
   `bigpages`) and `build/shots/`.
   `tools/swapbench/run.sh` measures the card's speeds for the swap.
   `tools/speed.sh` times each key typed (the gate runs it: DECISIONS
-  W43).
+  W43). The gate's `SESSION=redraw` (R49, 512 KB) checks the drawing:
+  after each change of the layout (paragraph and character styles,
+  sizes, fonts, alignment, indents, spacing, lists, the page setup, undo
+  and redo; with and without a selection, at the end, in the middle,
+  scrolled off the top, under a footer with {pages}) the text area as
+  the edits drew it is compared with the text wrapped again and drawn
+  whole (DECISIONS W55); screenshots `rdhead`, `rdbug`, `rdtop1`,
+  `rdend`.
   `tools/check_ovl.py` checks that no code calls into an overlay that may
   not be mapped.
+- **Stage 4** (`make test`): Word and OpenDocument files written as Word
+  and LibreOffice write them (`tools/office_fix.py`: every feature,
+  Polish, a table, pictures, a text box, a footnote, a comment, tracked
+  changes, fields, a header and a footer; 300 KB of XML) converted
+  (`test_cw ox in.docx out.cwr`, the program's own code) and checked
+  (`tools/check_office.py`), and, when LibreOffice is installed, the same
+  files saved by LibreOffice in the other format and converted again; a
+  document of every style exported as `.docx` and `.odt` and read back
+  (the same text, styles, paragraphs, page breaks and page setup), a
+  300 KB one read back with 10 banks free; each exported file checked by
+  `tools/check_docx.py` (its ZIP, its XML, and the words LibreOffice reads
+  in it). The gate's `SESSION=office` (R49, 512 KB, a host folder and an
+  SD card image): a `.docx` and an `.odt` opened (their documents as the
+  host's conversion of the same files), the note, exported both ways
+  into `/DOCUMENTS` (read back on the host: the document the program had;
+  `tools/check_docx.py`), a big `.docx` opened and exported (timed);
+  screenshots `oxnote`, `oxdoc`, `oxsave`, `oxodt` in `build/shots/`.
 
 ## The plan
 
@@ -351,10 +422,11 @@ opens `.CWR` documents with it.
 2. **Paragraphs**: paragraph styles (Heading 1-3, Body, Quote,
    lists, alignment, indents, spacing), find and replace, word count,
    its own text drawing.
-3. **Pages** (this): the page setup, page breaks, headers and footers
-   with page numbers, PDF export (the way to print). Footnotes: later.
-4. `.docx` and `.odt` import and export on the machine (Commander Calc's
-   zip and deflate).
+3. **Pages**: the page setup, page breaks, headers and footers with page
+   numbers, PDF export (the way to print). Footnotes: later.
+4. **`.docx` and `.odt`** (this): opened (converted) and exported on the
+   machine (Commander Calc's ZIP, inflate and XML reader, reworked to
+   stream).
 5. Tables, pictures from Paint, a spelling checker with a dictionary on
    the card.
 

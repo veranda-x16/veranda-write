@@ -12,6 +12,8 @@ extern long dm_delta;
 extern const struct vrwin win;
 extern pos_t s_lo, s_hi;                /* the selection as drawn */
 extern unsigned int clr_y;              /* the paper from there down (view.c's clear_below) */
+extern unsigned int clr_pg;             /* (its page) */
+extern unsigned int hf_tot;             /* (the page count the bands were drawn with) */
 extern unsigned char cur_on;
 extern unsigned int cy;                 /* (the cursor's top as drawn) */
 extern pos_t w_hit;
