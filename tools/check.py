@@ -34,34 +34,41 @@ MHZ = 8e6
 
 
 def lat(con, labels):
-    """the timed keys ("CW LAT keys cycles": tools/play.s 'Q' and 'R'),
-    from a key put in the ROM's queue to the program's drawing after it
-    (the text and the cursor; "CW LATS": the status bar after them; "CW
-    DRAW": a drawing of keys none of them timed), each group up to the
-    state logged after it"""
-    keys, ts, st, nd = 0, [], [], 0
-    for m in re.finditer(r'CW LAT ([0-9A-F]{8}) ([0-9A-F]{8})|CW STATE ([0-9A-F]{8})|CW DRAW ([0-9A-F]{8})'
-                         r'|CW LATS ([0-9A-F]{8})', con):
-        if m.group(3):
+    """the timed keys ("CW LAT keys cycles [frames]": tools/play.s 'Q', 'R'
+    and 'h'), from a key put in the ROM's queue to the program's drawing
+    after it (the text and the cursor; "CW LATS": the status bar after
+    them; "CW DRAW": a drawing of keys none of them timed; frames: the
+    main loop's longest pause meanwhile), each group up to the state
+    logged after it"""
+    keys, ts, st, nd, gap = 0, [], [], 0, 0
+    gaps = []
+    for m in re.finditer(r'CW LAT ([0-9A-F]{8}) ([0-9A-F]{8})(?: ([0-9A-F]{8}))?|CW STATE ([0-9A-F]{8})'
+                         r'|CW DRAW ([0-9A-F]{8})|CW LATS ([0-9A-F]{8})', con):
+        if m.group(4):
             if ts:
                 ts.sort()
                 st.sort()
-                n = int(m.group(3), 16)
-                print('keys %-55s %3d keys, %3d drawings: %4.0f ms median, %4.0f min, %4.0f max (%.1f frames)%s'
+                n = int(m.group(4), 16)
+                print('keys %-55s %3d keys, %3d drawings: %4.0f ms median, %4.0f min, %4.0f max (%.1f frames)%s%s'
                       % (labels.get(str(n), 'before state %d' % n) + ':', keys, nd, 1000 * ts[len(ts) // 2],
                          1000 * ts[0], 1000 * ts[-1], 60 * ts[len(ts) // 2],
-                         '; the status bar %.0f ms' % (1000 * st[len(st) // 2]) if st else ''))
-            keys, ts, st, nd = 0, [], [], 0
+                         '; the status bar %.0f ms' % (1000 * st[len(st) // 2]) if st else '',
+                         '; the longest pause %d frames' % gap if gap else ''))
+                gaps.append((labels.get(str(n), ''), gap))
+            keys, ts, st, nd, gap = 0, [], [], 0, 0
             continue
-        if m.group(5):
-            st.append(int(m.group(5), 16) / MHZ)
+        if m.group(6):
+            st.append(int(m.group(6), 16) / MHZ)
             continue
         nd += 1
-        if m.group(4):
-            keys += int(m.group(4), 16)
+        if m.group(5):
+            keys += int(m.group(5), 16)
             continue
         keys += int(m.group(1), 16)
         ts.append(int(m.group(2), 16) / MHZ)
+        if m.group(3):
+            gap = max(gap, int(m.group(3), 16))
+    return gaps
 
 
 def main():
@@ -100,7 +107,7 @@ def main():
               % (n, g['chars'], g['lines'], g['pages'], g['sum'], g['psum'], g['modified'], g['banks'], g['free'],
                  g['name']))
     if not partial and exp.get('SESSION') != 'speed':
-        for marker in ('CW ASIDE', 'CW DESK RESUME', 'CW BACK') if exp.get('SESSION') not in ('page', 'office', 'redraw', 'table', 'templ', 'tspeed', 'oxspeed') else ():
+        for marker in ('CW ASIDE', 'CW DESK RESUME', 'CW BACK') if exp.get('SESSION') not in ('page', 'office', 'redraw', 'table', 'templ', 'tspeed', 'oxspeed', 'scroll') else ():
             if marker not in con:
                 bad.append('no "%s" (Alt+Tab)' % marker)
         for name, want in exp['files'].items():
@@ -266,8 +273,13 @@ def main():
         print('put aside: %d banks free' % int(m.group(1), 16))
     for m in re.finditer(r'CW TIME (\S+) ([0-9A-F]{8})', con):
         print('time %s: %.3f s' % (m.group(1), int(m.group(2), 16) / MHZ))
-    for m in re.finditer(r'\nTIME (\S) ([0-9A-F]{8})', con):
+    tm = exp.get('timers', {})
+    for m in re.finditer(r'\nTIME (\S) ([0-9A-F]{8})(?: ([0-9A-F]{2}))?', con):
         big = 'SESSION' in exp
+        if m.group(1) in tm:
+            print('time %-55s %6.3f s until idle, the longest pause %d frames'
+                  % (tm[m.group(1)] + ':', int(m.group(2), 16) / MHZ, int(m.group(3) or '0', 16)))
+            continue
         print('time %s: %.3f s' % ({'l': 'open BIG.cwr (all of it)', 's': 'save BIG2.cwr',
                                      'f': 'find MIDDLEMARK from the start' if big else 'find in BIG.cwr (not found)',
                                      'r': 'replace all in BIG.cwr', 'e': 'Ctrl+End', 'h': 'Ctrl+Home',
@@ -311,7 +323,15 @@ def main():
             bad.append('"%s" %d times in the console, want once' % (t, con.count(t)))
         else:
             print('once: %s' % t)
-    lat(con, exp.get('labels', {}))
+    gaps = lat(con, exp.get('labels', {}))
+    # (W73) scrolling: no pass of the main loop 20 frames long (Veranda's
+    # busy pointer, kernel/g2/feedback.s's BUSY_AFTER) in the plain and the
+    # banded documents (the Guide's table rows are drawn a row at a time,
+    # some of them long: reported, not checked)
+    if exp.get('SESSION') == 'scroll' and not partial:
+        for label, g in gaps:
+            if g >= 20 and not label.startswith('guide'):
+                bad.append('%s: the main loop paused %d frames (the busy pointer)' % (label, g))
     for n, want in exp.get('lossy', {}).items():
         g = got.get(int(n))
         if g:

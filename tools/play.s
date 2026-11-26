@@ -46,7 +46,17 @@
 ;                     keys cycles" when the program has drawn it (keys: the
 ;                     ones it took since its last drawing). 'R''s keys are
 ;                     timed the same way
+;   'V' dl dh n f     the pointer moved by d (signed) every f frames, n
+;                     times, whatever the program does (a drag: the
+;                     scroll bar's thumb, W73); no record meanwhile
+;   'h' n             the wheel, timed as 'Q' times a key (the scroll
+;                     drawn: "CW LAT")
 ;   'S' / 'E'         the end: VRAM dumped, the emulator stops
+;
+; The main loop's longest pause (the busy pointer's measure: Veranda shows
+; it after 20 frames without a pass of the main loop): _play_lf counts the
+; frames since the program's appMain last ran (it clears it), _play_lfm
+; the most since 'Z', 'Q', 'R' or 'h'; 'Y' and "CW LAT" log it
 ;
 ; A program busy for HUNG frames on end is hung: "HUNG", the dump, the end.
 ;
@@ -55,7 +65,7 @@
 .include "veranda.inc"
 .include "x16hw.inc"
 
-.export _play_bank, _play_go, _play_slow, _play_t0, _play_st
+.export _play_bank, _play_go, _play_slow, _play_t0, _play_st, _play_lf, _play_lfm
 .import _cw_idle, _test_log, _barx, _bankt
 
 GAP     = 6
@@ -78,6 +88,10 @@ rec:	.res 10
 ended:	.byte 0
 moved:	.byte 1
 rk:	.byte 0
+gd:	.word 0                 ; 'V': the pointer's step,
+gn:	.byte 0                 ;   steps left,
+gf:	.byte 0                 ;   frames between,
+gc:	.byte 0                 ;   frames to the next
 rn:	.byte 0
 rf:	.byte 0
 rc:	.byte 0
@@ -89,6 +103,8 @@ bs:	.byte 0                 ; cur_on as last seen
 bf:	.word 0                 ; frames since it began
 _play_st: .byte 0               ; 'Q': a timed key waits to be drawn (test.c clears it)
 _play_t0: .res 4                ; the clock when it was put
+_play_lf: .byte 0               ; frames since appMain last ran (it clears it)
+_play_lfm: .byte 0              ; the most since the clock was last started
 
 .segment "CODE"
 
@@ -162,7 +178,15 @@ _play_slow:
 
 .segment "OVERLAY30"
 
-Player:	jsr rep
+Player:	lda _play_lf            ; (the main loop's pauses)
+	inc a
+	beq @lf
+	sta _play_lf
+	cmp _play_lfm
+	bcc @lf
+	sta _play_lfm
+@lf:	jsr rep
+	jsr glide
 	lda bn
 	beq @np
 	jsr probe
@@ -262,9 +286,40 @@ rep:	lda rn
 	jmp k_kbdbuf_put
 @r:	rts
 
+; 'V': the pointer on by gd every gf frames
+glide:	lda gn
+	beq @r
+	dec gc
+	bne @r
+	lda gf
+	sta gc
+	dec gn
+	clc
+	lda py
+	adc gd
+	sta py
+	lda py+1
+	adc gd+1
+	sta py+1
+	lda #1
+	sta moved
+@r:	rts
+opV:	lda rec+1
+	sta gd
+	lda rec+2
+	sta gd+1
+	lda rec+4
+	sta gf
+	lda #1
+	sta gc
+	lda rec+3
+	sta gn
+	rts
+
 ; a timed key: the clock, unless one put before is not drawn yet
 stamp:	lda _play_st
 	bne @r
+	stz _play_lfm
 	lda EMU_CLOCK
 	sta _play_t0
 	lda EMU_CLOCK+1
@@ -279,10 +334,13 @@ stamp:	lda _play_st
 opQ:	jsr stamp
 	lda rec+1
 	jmp k_kbdbuf_put
+oph:	jsr stamp
+	jmp opH
 
 step:	lda ended
 	bne @r
 	lda rn                  ; (a held key: the next record after it)
+	ora gn                  ; (a glide too)
 	bne @r
 	lda appMain
 	ora appMain+1
@@ -381,6 +439,10 @@ ops:	.byte 'P', 5
 	.addr opB - 1
 	.byte 'Q', 2
 	.addr opQ - 1
+	.byte 'h', 2
+	.addr oph - 1
+	.byte 'V', 5
+	.addr opV - 1
 	.byte 'S', 1
 	.addr stop - 1
 	.byte 'E', 1
@@ -491,7 +553,8 @@ opH:	lda rec+1
 opL:	lda rec+1
 	sta _test_log
 	rts
-opZ:	jsr mark
+opZ:	stz _play_lfm
+	jsr mark
 	ldx #3
 @z:	lda tl,x
 	sta t0,x
@@ -533,6 +596,10 @@ opY:	ldx #0
 	jsr hex
 	dex
 	bpl @h
+	lda #' '
+	sta EMU_STDOUT
+	lda _play_lfm
+	jsr hex2
 	lda #10
 	sta EMU_STDOUT
 	rts

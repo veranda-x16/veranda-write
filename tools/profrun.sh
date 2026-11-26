@@ -9,9 +9,9 @@ L=$1; D=$2
 R49=${R49:-$HOME/Downloads/Release.R49.ROM.Image/rom.bin}
 EMU=$PWD/build/x16prof/build/x16emu
 SDK=${SDK:-build/sdk}
-export SESSION=oxspeed RAM=512 OXONLY=$L
+export SESSION=${SESSION:-oxspeed} RAM=512 OXONLY=$L
 export X16PROF_FROM X16PROF_TO
-export X16PROF_LIB=$(python3 -I -B tools/prof.py --libranges "${APPDIR:-build/veranda/test}")
+export X16PROF_LIB=${X16PROF_LIB-$(python3 -I -B tools/prof.py --libranges "${APPDIR:-build/veranda/test}")}
 tools/run.sh "$D" "" "$R49" --prepare > /dev/null
 if [ "$3" = card ]; then
 	mkdir -p "$D.sd"; rm -f "$D.sd/sd.img"

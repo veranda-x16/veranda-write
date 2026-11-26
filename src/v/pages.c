@@ -35,6 +35,7 @@ extern unsigned char pg_est, pg_buf[], pv_st[];
 #define VMAX 40
 #else
 #include "cwv.h"
+#include "../spell.h"                    /* (sp_kj: the last key, W73) */
 #pragma code-name ("OVERLAY13")
 #pragma rodata-name ("OVL13RO")
 #pragma bss-name ("OVL13BSS")
@@ -375,8 +376,12 @@ void pg_at(void)
 /* the main loop's idle time: the walk on a while; 1 more to do */
 unsigned char pg_idle(void)
 {
+#ifndef CW_HOST
+    if ((unsigned char)(cw_jiffies() - sp_kj) < 30)
+        return 1;                       /* (W73: half a second after a key: typing goes first) */
+#endif
     drain();
-    return !walk_on(250) || ff_on;
+    return !walk_on(64) || ff_on;      /* (W73: 64 lines a pass: a key waits no longer) */
 }
 
 /* the first line of page pg_arg, all of the document counted (pg_tot) */

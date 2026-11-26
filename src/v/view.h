@@ -17,6 +17,8 @@ extern unsigned int hf_tot;             /* (the page count the bands were drawn 
 extern unsigned char cur_on;
 extern unsigned int cy;                 /* (the cursor's top as drawn) */
 extern pos_t w_hit;
+extern unsigned int an_i;               /* (layout.c: lt_find's and lt_start's anchor; W73: the view's top) */
+extern pos_t an_pos;
 extern int v_n;
 void __fastcall__ clip(unsigned char on);
 void rows_build(void);                  /* (pgview.c) */

@@ -200,6 +200,17 @@ void view_title(void);                  /* the title band: the name, modified */
 /* a frame with its corners cut (Look 3's buttons and fields) */
 void __fastcall__ rbox(unsigned int l, unsigned int t, unsigned int r, unsigned int b);
 extern unsigned char sb_a, sb_n;        /* the scroll bar's thumb: its card rows in the track */
+/* (W73) scrolling: rb_gen, counted at each rr_clear (view.c, render.s);
+   v_rb, draw_row writes the row the row bank holds again; v_scr, the
+   view scrolling (mk_pre looks a row's words up though a key came);
+   v_acc, lines still to scroll (Page Up and Down: drawn once, in the
+   next drawing); v_more, rows still to draw (a pass at a time);
+   v_stale, the back screen's text area not the front's (view2.c's
+   v_sync makes it so) */
+extern unsigned char rb_gen, v_rb, v_scr, v_more, v_stale, v_sj;
+void v_sync(void);                      /* (vscroll.s, overlay 10, through glue.s) */
+void cw_mouse(void);                    /* (vscroll.s, main RAM: mouseVector while v_stale) */
+extern int v_acc;
 /* place <-> x: on line i; lw_x the x of p on it, lw_hit the place at x */
 unsigned int __fastcall__ line_x(unsigned int i, pos_t p);
 pos_t __fastcall__ line_hit(unsigned int i, unsigned int x);
@@ -275,6 +286,9 @@ void t_toolbar(void);                   /* (tbar.c, overlay 12) the toolbar and 
 void t_status(void);                    /* (status.c, overlay 8) the status bar (view_status) */
 void t_ruler(void);                     /* (ruler.c, overlay 9) the ruler: paragraph style t_arg */
 void t_sbar(void);                      /* (sbar.c, overlay 7) the scroll bar, when its thumb moved */
+void t_sbpress(void), t_sbdrag(void);   /* (W73: sbar.c, overlay 7; view2.c, 5) a press in the scroll bar (r11: y), the thumb dragged */
+extern unsigned char sb_off;            /* (the thumb: where it was taken) */
+void e_vw_move(void);                   /* (vscroll.s, overlay 10, W73) the text area's rows moved by r13 */
 void menus_layout(void);                /* (tbcmd.c, overlay 29) */
 void menu_make(void);                   /* msub: bar item menu_bar's list */
 void sizes_fill(void);                  /* sz_list: the sizes of style menu_choice's font */
@@ -368,6 +382,7 @@ void sp_tgate(void);                    /* (W60, v/ovlclr.c: the gate's, t_arg $
 extern unsigned char test_log;
 void __fastcall__ test_key(unsigned char k);
 void test_drawn(void);
+extern unsigned char play_lf;          /* (tools/play.s: frames since the main loop ran) */
 void test_status(void);
 void test_aside(void);
 void __fastcall__ play_slow(unsigned char cur);

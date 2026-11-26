@@ -417,6 +417,8 @@ static void key(void)
 {
     unsigned char k = keyData, m = keyDataMods, sh = m & 1, ctrl = m & 2;
     PM("k<");
+    if (v_stale && !(m & KEYM_ARROW))
+        v_sync();                      /* (W73: the back screen the front's first: a box may come) */
     sw_ulin();                          /* (back from being put aside: the undo log's banks) */
     if (status_msg[0]) {
         status_msg[0] = 0;
@@ -505,12 +507,12 @@ static void key(void)
         if (ctrl)
             move_to(0, sh);
         else {
-            view_scroll(-(int)(vn - 1));
-            move_line(-(int)(vn - 1), sh);
+            v_acc -= vn - 1;            /* (W73: scrolled in the next drawing, the keys that */
+            move_line(-(int)(vn - 1), sh);  /* came meanwhile with it) */
         }
         return;
     case KEY_PGDN:
-        view_scroll(vn - 1);
+        v_acc += vn - 1;
         move_line(vn - 1, sh);
         return;
     case 8:
@@ -646,15 +648,9 @@ static void press(void)
         else if (x >= TB_NAME && x < TB_NAME + TB_NAMEW)
             popup(5, TB_NAME, TB_NAMEW);
     } else if (x >= SB_X && y >= TA_TOP && y <= TA_END) {
-        /* the scroll bar: the arrows three lines, the track a screen */
-        if (y <= SB_UP)
-            view_scroll(-3);
-        else if (y >= SB_DN)
-            view_scroll(3);
-        else if (y < SB_UP + 1 + (sb_a << 3))
-            view_scroll(-(int)(vn - 1));
-        else if (y >= SB_UP + 1 + ((sb_a + sb_n) << 3))
-            view_scroll(vn - 1);
+        r11 = y;                        /* the scroll bar (sbar.c): the arrows, the track, */
+        callb(bank7, t_sbpress);        /*  the thumb (2: dragged) */
+        dragging = t_arg;
         follow = 0;
     } else if (y >= 16 && y < 32 && x >= 616)
         c_close();                      /* the title band's close box */
@@ -669,6 +665,11 @@ static void drag(void)
         return;
     }
     mouse_xy(&x, &y);
+    if (dragging == 2) {
+        r11 = y;                        /* (W73: the scroll bar's thumb) */
+        callb(bank5, t_sbdrag);
+        return;
+    }
     if (y < TA_TOP) {
         move_line(-1, 1);
         return;
@@ -698,6 +699,9 @@ static void tick(void)
 {
     signed char w;
     unsigned int y, x;
+#ifdef CW_TEST
+    play_lf = 0;                        /* (the gate: the main loop ran) */
+#endif
     dlg_keep();                         /* (back from being put aside: the banks again) */
     if (dragging)
         drag();
@@ -708,6 +712,9 @@ static void tick(void)
     if (w && menuNumber == 0) {
         view_scroll(3 * w);
         follow = 0;
+#ifdef CW_TEST
+        test_drawn();
+#endif
     }
     mouse_xy(&x, &y);
     SetPointer(y >= TA_TOP && y <= TA_BOT && x >= PG_L && x <= PG_R ? PTR_IBEAM : PTR_ARROW);
@@ -770,9 +777,15 @@ static void tick(void)
     }
     if (menuNumber == 0)
         view_blink();
+    if (v_stale && !v_more) {
+        if ((unsigned char)(cw_jiffies() - v_sj) >= 6)
+            v_sync();                  /* (W73: the scrolling stopped: the back screen the front's) */
+        return;                         /* (not idle till then: the gate's checks read both screens) */
+    }
     cw_idle = 1;
-    if (pg_more || pq_k || pg_lo != 0xFFFF) {
-        pg_more = pg_idle();            /* the pages counted on, in idle time */
+    if (pg_more || pq_k || pg_lo != 0xFFFF || (pg_est & 2)) {
+        pg_more = pg_idle();            /* the pages counted on, in idle time (W73: a document opened */
+                                        /*  after another too: its count a guess till then) */
         if (!pg_more)
             status_dirty = need_view = 1;
     }

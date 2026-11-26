@@ -64,122 +64,51 @@ static unsigned char dirty[VMAX];
 #pragma bss-name (pop)
 
 /*---------------------------------------------------------------
-  walking a line: x of a place, the place at an x (main RAM's view.c
-  and overlay 1 call them through glue.s)
- ---------------------------------------------------------------*/
-extern unsigned char lb[128];
-extern unsigned int xs, sp_k;
-unsigned int __fastcall__ sp_w(unsigned int w);
-
-unsigned int e_walk(pos_t p0, const struct line *l, unsigned char mode, pos_t t)
-{
-    static unsigned int x, k, j, w;
-    static pos_t p, e, last;
-    static unsigned char c, s;
-    line_geom(l, p0);
-    x = xs = TX0 + lg_x0;
-    sp_k = 0;
-    p = p0;
-    e = p0 + l->len;
-    last = p0;
-    s = l->s;
-    fl_style(s);
-    while (p < e) {
-        k = cb_read(&tx, p, lb, e - p > sizeof lb ? sizeof lb : (unsigned int)(e - p));
-        for (j = 0; j < k;) {
-            c = lb[j];
-            if (IS_KIND(c)) {
-                if (j + 3 > k)
-                    break;
-                if (c == K_CS) {
-                    s = lb[j + 1];
-                    fl_style(s);
-                }
-                j += 3;
-                continue;
-            }
-            if (mode == 0 && p + j >= t)
-                return x;
-            w = c == CH_TAB ? TABW - (x - xs) % TABW : c == CH_CR ? 0 : c == ' ' ? sp_w(CHW(c)) : CHW(c);
-            if (mode == 1 && (c == CH_CR || t < x + w / 2)) {
-                w_hit = p + j;
-                return x;
-            }
-            last = p + j;
-            x += w;
-            ++j;
-        }
-        if (!j)
-            break;
-        p += j;
-    }
-    if (mode == 1)
-        w_hit = (l->f & LF_PARA) || e >= tx.total ? e : last;
-    return x;
-}
-
-static struct line wl;                  /* (this overlay's: only it reads it) */
-
-unsigned int __fastcall__ e_line_x(unsigned int i, pos_t p)
-{
-    lw_start = lt_start(i);
-    lt_get(i, &wl);
-    if (IS_TR(&wl))
-        return tb_lx(i, p);             /* (1.6: a table's row, tbview.c) */
-    return e_walk(lw_start, &wl, 0, p);
-}
-
-pos_t __fastcall__ e_line_hit(unsigned int i, unsigned int x)
-{
-    lw_start = lt_start(i);
-    lt_get(i, &wl);
-    if (IS_TR(&wl))
-        return tb_lh(i, x);
-    e_walk(lw_start, &wl, 1, x);
-    return pos_norm(w_hit);
-}
-
-/* the selection's part of row i inverted (on the screens dispBufferOn says) */
-void e_row_sel(unsigned char i, pos_t lo, pos_t hi)
-{
-    struct vrow *r = &vr[i];
-    pos_t e = r->pos + r->l.len;
-    unsigned int x0, x1;
-    if (IS_TR(&r->l)) {
-        tb_sel(i, lo, hi);              /* (1.6: a table's row, tbview.c) */
-        return;
-    }
-    if (lo < r->pos)
-        lo = r->pos;
-    if (hi > e)
-        hi = e;
-    if (lo >= hi)
-        return;
-    x0 = e_walk(r->pos, &r->l, 0, lo);
-    x1 = e_walk(r->pos, &r->l, 0, hi);
-    if (hi == e && (r->l.f & LF_PARA))
-        x1 += 5;                        /* the paragraph's end selected */
-    if (x1 > PG_R)
-        x1 = PG_R;
-    if (x1 > x0)
-        WInvertRectangle(x0, r->y, x1 - 1, row_bot(i));
-}
-
-/*---------------------------------------------------------------
   the scroll bar
  ---------------------------------------------------------------*/
 /* (sbar.c, overlay 7, with the window chrome) */
-static void scrollbar(void)
+void vw_bar(void)
 {
     callb(bank7, t_sbar);
 }
+#define scrollbar vw_bar
 
 /*---------------------------------------------------------------
   the whole view
  ---------------------------------------------------------------*/
-void v_all(void)
+extern unsigned char vp_i, vp_e;        /* (W73, vscr.s) rows vp_i .. vp_e - 1 still to draw (v_more) */
+void __fastcall__ v_draw(unsigned char k);  /* (vscr.s) row k drawn, perhaps from the row bank */
+#pragma bss-name (push, "OVL5BSS")
+static unsigned char vt;
+#pragma bss-name (pop)
+typedef char vrow_is_21[sizeof(struct vrow) == 21 ? 1 : -1];   /* (vscr.s's offsets) */
+unsigned char v_more, v_stale, v_sj;     /* (main RAM: tick, the gate, ui.c, vscroll.s; v_sj: when it last scrolled) */
+int v_acc;
+
+/* the rows still to draw, a few frames' worth at a time (all: the rest,
+   none from the row bank); then the paper under them, the status bar */
+void __fastcall__ vw_rows(unsigned char all)
 {
-    unsigned char i;
+    vt = cw_jiffies();
+    clip(1);
+    v_scr = !all;
+    while (vp_i < vp_e) {
+        v_draw(vp_i++);
+        if (!all && vp_i < vp_e && (unsigned char)(cw_jiffies() - vt) >= 3)
+            break;
+    }
+    v_scr = 0;
+    if (vp_i >= vp_e) {
+        v_more = 0;
+        clear_below();
+        status_dirty = 1;
+    } else
+        need_view = 1;                  /* (the next pass draws on: the main loop runs between) */
+    clip(0);
+}
+
+static void v_begin(void)
+{
     view_cursor(0);
     clr_y = 0xFFFF;
     clip(1);
@@ -188,13 +117,39 @@ void v_all(void)
     s_hi = SEL_HI();
     hf_np = 0;
     hf_tot = pg_tot;
-    for (i = 0; i < vn; ++i)
-        draw_row(i);
-    clear_below();
-    clip(0);
     dm_on = 0;
+    vp_i = 0;
+    vp_e = vn;
+}
+
+void v_all(void)
+{
+    v_begin();
+    vw_rows(1);
     scrollbar();
-    status_dirty = 1;
+}
+
+/* (W73) the rows TY0 .. TA_BOT moved by dy lines, those it uncovers
+   made paper (dy 0: all of them): vscroll.s, on the front screen only
+   while no menu is open (v_stale; v_sync makes the back screen the
+   front's again once the scrolling stops) */
+void __fastcall__ vw_move(int dy)
+{
+    clip(0);
+    r13 = dy;
+    callb(bank10, e_vw_move);
+}
+
+/* (W73) the view drawn again a pass at a time: scrolling by a screen or
+   more (Page Down, the track, the thumb); the text area made paper
+   first, so what is not drawn yet is not the page before */
+void vw_page(void)
+{
+    v_begin();
+    vw_move(0);
+    v_more = 1;
+    scrollbar();
+    vw_rows(0);
 }
 
 void v_frame(void)
@@ -218,73 +173,29 @@ void v_frame(void)
     v_all();
 }
 
-/* n lines down (n > 0) or up, the rows moved with ScrollRect */
-void v_scroll(void)
+/* (W73) v_scroll, v_draw: vscr.s (this overlay), for the room */
+
+/* (W73) the scroll bar's thumb dragged (r11: the pointer's y; sbar.c's
+   t_sbpress took it, sb_off below its top): the line at the thumb's top
+   as the track's pixels share out the lines; the view scrolled there,
+   once a pass of the main loop however far the pointer went */
+#pragma bss-name (push, "OVL5BSS")
+static unsigned int sb_y;
+#pragma bss-name (pop)
+
+void t_sbdrag(void)
 {
-    int n = v_n;
-    unsigned int dy, m, i;
-    struct line l;
-    unsigned char k;
-    if (n > 0) {
-        if (top_line + n >= lt_n)
-            n = lt_n - 1 - top_line;
-        if (n <= 0)
-            return;
-        if (n >= vn) {
-            top_line += n;
-            v_all();
-            return;
-        }
-        view_cursor(0);
-        dy = vr[n].y - vr[n].g - TY0;
-        clip(0);
-        dispBufferOn = ST_WR_FORE | ST_WR_BACK;
-        ScrollRect(PG_C0, PG_CW, TY0, TA_BOT, -(int)dy, 0);
-        clr_y = 0xFFFF;
-        top_line += n;
-        clip(1);
-        rows();
-        for (k = 0; k < vn; ++k)
-            if (vr[k].y + vr[k].l.h - 1 > TA_BOT - dy)
-                draw_row(k);
-        clear_below();
-    } else {
-        m = -n;
-        if (m > top_line)
-            m = top_line;
-        if (!m)
-            return;
-        dy = 0;
-        for (i = 1; i <= m && dy < TA_BOT - TA_TOP; ++i) {
-            lt_get(top_line - i, &l);
-            dy += l.h;
-        }
-        top_line -= m;
-        if (dy >= TA_BOT - TA_TOP - 16) {
-            v_all();
-            return;
-        }
-        rows();                   /* (the bands: the old top row is row m now) */
-        if (m >= vn || (dy = vr[m].y - vr[m].g - TY0) >= TA_BOT - TA_TOP - 16) {
-            v_all();
-            return;
-        }
-        view_cursor(0);
-        clip(0);
-        dispBufferOn = ST_WR_FORE | ST_WR_BACK;
-        ScrollRect(PG_C0, PG_CW, TY0, TA_BOT, dy, 0);
-        clr_y = 0xFFFF;
-        clip(1);
-        for (k = 0; k < vn && vr[k].y - vr[k].g < TY0 + dy; ++k)
-            draw_row(k);
-        if (vn)
-            draw_row(vn - 1);           /* (cut at the bottom now) */
-        clear_below();
+    sb_y = r11 - sb_off;
+    sb_y = sb_y < SB_UP + 1 || sb_y > 0x7FFF ? 0 : sb_y - (SB_UP + 1);
+    sb_y = (unsigned int)((unsigned long)sb_y * lt_n / (SB_ROWS * 8));
+    if (sb_y >= lt_n)
+        sb_y = lt_n - 1;
+    if (sb_y != top_line) {
+        v_n = (int)sb_y - (int)top_line;
+        v_scroll();
     }
-    clip(0);
-    dm_on = 0;
-    scrollbar();
 }
+
 
 /* the cursor's line on the screen, whole */
 void v_fix_cursor(void)
@@ -361,8 +272,23 @@ void v_refresh(void)
     static pos_t q, slo, shi;
     pos_t lo = SEL_LO(), hi = SEL_HI(), e;
     view_cursor(0);
+    if (v_more && dm_on)
+        vw_rows(1);                      /* (W73: an edit: the rows drawn first, all of them) */
+    if (v_acc) {
+        v_n = v_acc;                    /* (W73: Page Up and Down, as many as came: one scroll) */
+        v_acc = 0;
+        if (dm_on) {
+            if (v_n < 0 && (unsigned int)-v_n > top_line)
+                v_n = -(int)top_line;
+            top_line += v_n;
+            if (top_line >= lt_n)
+                top_line = lt_n - 1;
+        } else
+            v_scroll();
+    } else if (v_more)
+        vw_rows(0);                      /* (the rows still to draw: a few more) */
     if (hf_np && hf_tot != pg_tot)
-        v_all();                        /* (W55: a band's {pages} drawn with another count) */
+        vw_page();                      /* (W55: a band's {pages} drawn with another count; W73: a pass at a time) */
     if (dm_on) {
         memcpy(ov, vr, sizeof vr);
         ovn = vn;
@@ -451,14 +377,14 @@ void v_refresh(void)
         dispBufferOn = ST_WR_FORE | ST_WR_BACK;
         for (i = 0; i < vn; ++i) {
             if (s_lo < s_hi && lo < hi && s_lo == lo) {
-                e_row_sel(i, s_hi < hi ? s_hi : hi, s_hi < hi ? hi : s_hi);
+                row_sel(i, s_hi < hi ? s_hi : hi, s_hi < hi ? hi : s_hi);
             } else if (s_lo < s_hi && lo < hi && s_hi == hi) {
-                e_row_sel(i, s_lo < lo ? s_lo : lo, s_lo < lo ? lo : s_lo);
+                row_sel(i, s_lo < lo ? s_lo : lo, s_lo < lo ? lo : s_lo);
             } else {
                 if (s_lo < s_hi)
-                    e_row_sel(i, s_lo, s_hi);
+                    row_sel(i, s_lo, s_hi);
                 if (lo < hi)
-                    e_row_sel(i, lo, hi);
+                    row_sel(i, lo, hi);
             }
         }
         clip(0);

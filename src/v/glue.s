@@ -193,11 +193,12 @@ FAR _view_title, _v_title, _bank5
 FAR _view_fix_cursor, _v_fix_cursor, _bank5
 FAR _view_status, _t_status, _bank8
 FAR _view_toolbar, _t_toolbar, _bank12
-; overlay 5: walking a line (view2.c)
+; walking a line (vwalk.c: overlays 5, 12 and 29; W73: overlay 5 wanted the room)
 FAR _walk, _e_walk, _bank5
-FAR _line_x, _e_line_x, _bank5
-FAR _line_hit, _e_line_hit, _bank5
-FAR _row_sel, _e_row_sel, _bank5
+FAR _line_x, _e_line_x, _bank12
+FAR _line_hit, _e_line_hit, _bank12
+FAR _row_sel, _e_row_sel, _bank29
+FAR _v_sync, _e_v_sync, _bank10       ; (W73: vscroll.s)
 ; overlay 8: the font cache
 FAR _fc_load, _e_fc_load, _bank8
 FAR _fc_reset, _e_fc_reset, _bank8

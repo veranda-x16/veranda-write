@@ -15,7 +15,10 @@
    back screen right. After edits, view_refresh draws only the rows the
    layout's damage touches; rows that only moved (a line more or less
    above them) are moved with ScrollRect instead of being drawn again.
-   Scrolling moves the rows with ScrollRect and draws the new ones. The
+   Scrolling (W73: view2.c, vscr.s, vscroll.s) moves the rows on the front
+   screen by VERA's ports and FX cache, draws only the rows it uncovers, a
+   few frames' worth a pass, and makes the back screen the front's when
+   it stops. The
    cursor is a bar inverted on the front screen only, blinking; a
    selection's change without an edit inverts only the difference.
 
@@ -53,6 +56,8 @@ static void __fastcall__ cc_set(unsigned int x)
 
 const struct vrwin win = { 0, 2, 80, 58, 2, 2, VW_CLOSE };
 unsigned char sb_a = 0xFF, sb_n;        /* the scroll bar's thumb as drawn (view2.c) */
+unsigned char sb_off;                   /* (W73) where the thumb was taken (sbar.c, view2.c) */
+struct line wl;                         /* (vwalk.c's line_x and line_hit: e_walk, another overlay, reads it) */
 
 /* a frame with its corners cut */
 void __fastcall__ rbox(unsigned int l, unsigned int t, unsigned int r, unsigned int b)
@@ -149,6 +154,11 @@ unsigned int __fastcall__ row_bot(unsigned char i)
     return b > TA_BOT ? TA_BOT : b;
 }
 
+/* (W73) rb_gen: counted by render.s's rr_clear and rr_tables, so a row
+   the row bank still holds is known by it (view2.c's v_rows); v_rb: that
+   row written again, not put together again; v_scr: the view scrolling */
+unsigned char rb_gen, v_rb, v_scr;
+
 /* row i drawn by render.s: the band of the line where its glyphs are
    (its fonts' tallest ascent and deepest descent: the line's height but
    the space before and after the paragraph, the line spacing's and the
@@ -169,6 +179,8 @@ void __fastcall__ draw_row(unsigned char i)
         tb_draw(i);                     /* (1.6: a table's row, tbview.c) */
         return;
     }
+    if (v_rb)
+        goto blit;                      /* (W73: scrolling, the row the row bank holds: written again) */
     ps = &par[r->l.p];
     a = r->l.a;
     rr_bt = (r->l.f & LF_FIRST) ? ps->before : 0;
@@ -292,6 +304,7 @@ void __fastcall__ draw_row(unsigned char i)
         rr_top = a - fl_a;
         rr_run();
     }
+blit:
     rr_y = r->y;
     rr_lh = r->l.h;
     rr_ylo = TA_TOP;
@@ -344,7 +357,8 @@ void view_cursor(unsigned char on)
     }
     if (!on || HAS_SEL())
         return;
-    lt_find(cur);
+    blink = cw_jiffies();               /* (W73: off the screen: tried again on the clock, */
+    lt_find(cur);                       /*  not each pass of the main loop) */
     L = lf_i;
     if (L < top_line || L >= top_line + vn)
         return;
@@ -372,7 +386,6 @@ void view_cursor(unsigned char on)
     cursor_xor();
     clip(0);
     cur_on = 1;
-    blink = cw_jiffies();
 }
 
 /* the cursor blinks on the clock, not on main loop passes (DECISIONS

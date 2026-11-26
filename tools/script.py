@@ -1993,6 +1993,201 @@ def session_oxspeed(run):
     return s, {}
 
 
+def plain_chars(n):
+    """about n bytes of plain Gate Sans 12 paragraphs (40-100 words each)"""
+    x = 3
+    out = []
+    size = para = 0
+    while size < n:
+        para += 1
+        for w in range(40 + para * 7 % 60):
+            x = (x * 1103515245 + 12345) & 0x7FFFFFFF
+            word = cwrd.WORDS[(x >> 8) % len(cwrd.WORDS)]
+            out.extend((ord(ch), SANS, 12, 0) for ch in word + ' ')
+            size += len(word) + 1
+        out[-1] = (cwrd.CR, SANS, 12, 0)
+    return out
+
+
+SB_TRACK_X = 631                        # (the scroll bar: src/v/cwv.h, SB_X 624 .. 639)
+TA_TOP, TA_END = 64, 463                # (the text's area)
+
+
+def session_scroll(run):
+    """(W73, may be renumbered) scrolling timed and checked (SESSION=scroll,
+    R49 at 512 KB): in a plain long document, the user's converted
+    "Veranda Desktop Guide.docx" (headings, lists, tables) and a document
+    with page bands (a header and a footer): the cursor down and up a line
+    at the screen's edge, a held arrow key, the wheel a notch and five at
+    once, Page Down and Page Up, the scroll bar's arrows and track, its
+    thumb dragged, a selection made by Shift+Down and scrolled by the
+    wheel; each timed ('Q', 'h': "CW LAT keys cycles frames": the drawing,
+    the main loop's longest pause; 'Z' .. 'Y': until idle, the spelling
+    marks too) and the redraw check after each (the screen as scrolling
+    left it against a full drawing: W55)"""
+    import shutil
+    s = Script()
+    s.W(90)
+    s.labels = {}
+    s.redraws = []
+    n = [0, 0]
+    tc = [0]
+
+    prof = os.environ.get('SCROLLPROF')        # (a profile: tools/profrun.sh's, between two 'Y's of the step named)
+
+    def V():
+        if prof:
+            return
+        n[0] += 1
+        s.stop('v%d' % n[0])                    # (a screenshot before each check: --stop v12)
+        s.L(0x80 | n[0], None)
+        s.states.pop()
+        s.redraws.append(n[0])
+
+    def state(label, want):
+        n[1] += 1
+        s.L(n[1], dict(want, cur_in=1))
+        s.labels[n[1]] = label
+
+    def tmark():
+        tc[0] += 1
+        return chr(ord('a') + tc[0] - 1) if tc[0] <= 26 else chr(ord('A') + tc[0] - 27)
+
+    s.timers = {}
+
+    def timed(label, fn, wait=60):
+        c = tmark()
+        s.timers[c] = label
+        if prof and prof not in label:
+            fn()
+            s.W(wait)
+            return
+        if prof:
+            s.Y('<')                            # (X16PROF_FROM=@< X16PROF_TO=@>)
+        s.Z()
+        fn()
+        s.W(wait)
+        s.Y('>' if prof else c)
+
+    def Q(k, times, gap=10):
+        for _ in range(times):
+            s.b += bytes([ord('Q'), k])
+            s.W(gap)
+
+    def wheel(d, times, gap=10):
+        for _ in range(times):
+            s.b += bytes([ord('h'), d & 255])
+            s.W(gap)
+
+    def opn(letter):
+        s.K(ord('o'), CTRL)
+        s.W(40)
+        s.K(ord(letter))
+        s.W(10)
+        s.K(RET)
+        s.W(90)
+
+    def steps(tag, want):
+        s.K(CTRL_HOME, CTRL)
+        s.W(20)
+        for _ in range(45):                     # (the cursor to the screen's last line)
+            s.K(KEY_DOWN)
+        s.W(30)
+        V()
+        timed(tag + ': Down at the bottom (8)', lambda: Q(KEY_DOWN, 8))
+        state(tag + ': Down at the bottom, a line', want)
+        V()
+        for _ in range(45):
+            s.K(KEY_UP)
+        s.W(30)
+        timed(tag + ': Up at the top (8)', lambda: Q(KEY_UP, 8))
+        state(tag + ': Up at the top, a line', want)
+        V()
+        timed(tag + ': wheel down (6 notches)', lambda: wheel(1, 6))
+        state(tag + ': the wheel down a notch (3 lines)', want)
+        V()
+        timed(tag + ': wheel up (6 notches)', lambda: wheel(-1, 6))
+        state(tag + ': the wheel up a notch', want)
+        V()
+        timed(tag + ': 5 notches at once', lambda: wheel(5, 1))
+        state(tag + ': the wheel, 5 notches at once', want)
+        V()
+        timed(tag + ': PgDn (5)', lambda: Q(PGDN, 5))
+        state(tag + ': Page Down', want)
+        V()
+        timed(tag + ': PgUp (3)', lambda: Q(PGUP, 3))
+        state(tag + ': Page Up', want)
+        V()
+        timed(tag + ': Down held (30 at 30 a second)', lambda: s.b.extend(bytes([ord('R'), KEY_DOWN, 30, 2])))
+        state(tag + ': Down held, 30 a second', want)
+        V()
+        s.M(SHIFT)                              # a selection made while it scrolls
+        timed(tag + ': Shift+Down (6)', lambda: Q(KEY_DOWN, 6))
+        s.M(0)
+        state(tag + ': Shift+Down at the bottom', want)
+        V()
+        timed(tag + ': wheel with a selection (4)', lambda: wheel(1, 4))
+        state(tag + ': the wheel with a selection', want)
+        V()
+        timed(tag + ': wheel back up with a selection (4)', lambda: wheel(-1, 4))
+        state(tag + ': the wheel up with a selection', want)
+        V()
+        s.K(ESC)
+        s.W(10)
+        for y, lab in ((TA_END - 4, 'the scroll bar\'s down arrow'), (TA_TOP + 4, 'the scroll bar\'s up arrow')):
+            timed(tag + ': ' + lab + ' (3)', lambda y=y: [s.click(SB_TRACK_X, y) or s.W(10) for _ in range(3)])
+            V()
+        timed(tag + ': the track below the thumb', lambda: s.click(SB_TRACK_X, TA_END - 40))
+        V()
+        thumb(tag)
+        state(tag + ': the scroll bar', want)
+
+    def thumb(tag):
+        """the thumb dragged down and back: pressed at its top (it is at
+        the track's top after Ctrl+Home), moved 4 lines a frame"""
+        s.K(CTRL_HOME, CTRL)
+        s.W(20)
+        y0 = TA_TOP + 15 + 1 + 4                # (SB_UP + 1: the track; the thumb's first card row)
+
+        def drag():
+            s.P(SB_TRACK_X, y0)
+            s.b += b'D'
+            s.W(2)
+            s.b += bytes([ord('V'), 4, 0, 40, 1])   # (160 pixels in 40 frames, whatever the program does)
+            s.W(2)
+            s.b += b'U'
+        timed(tag + ': the thumb dragged 160 pixels down', drag)
+        V()
+
+    plain = plain_chars(int(os.environ.get('SCROLL_SIZE', '60000')))
+    cwrd.write(os.path.join(run, 'Plain.cwr'), plain, lang=1)
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tests', 'office')
+    shutil.copy(os.path.join(src, 'Veranda Desktop Guide.docx'), run)
+    bands = plain_chars(30000)
+    page = {'paper': 1, 'flags': 0, 'w': 12240, 'h': 15840, 'top': 1440, 'bottom': 1440, 'left': 1417,
+            'right': 1417, 'head': 'Scroll test|{page}', 'foot': 'Page {page} of {pages}'}
+    cwrd.write(os.path.join(run, 'Bands.cwr'), bands, lang=1, page=page)
+    opn('P')
+    m = Model(plain)
+    want = {'chars': len(m.c), 'sum': cwrd.doc_sum(m.c), 'psum': cwrd.par_sum(m.p), 'modified': 0}
+    steps('plain', want)
+    opn('V')
+    steps('guide', {})
+    s.K(ord('o'), CTRL)                         # (the Guide converted: not saved)
+    s.W(40)
+    s.click(*NO_BUTTON)
+    s.W(40)
+    s.K(ord('B'))
+    s.W(10)
+    s.K(RET)
+    s.W(90)
+    m = Model(bands)
+    s.W(int(os.environ.get('BANDWAIT', '0')) or 1)
+    steps('bands', {'chars': len(m.c), 'sum': cwrd.doc_sum(m.c), 'psum': cwrd.par_sum(m.p), 'modified': 0})
+    s.stop('end')
+    return s, {}
+
+
 def session_redraw(run):
     """the partial redraw against a full one (SESSION=redraw; W55): after
     each change of the layout that changes no text, and after typing, the
@@ -3377,7 +3572,8 @@ def main():
     s, files = {'big': session_big, 'speed': session_speed, 'page': session_page,
                  'office': session_office, 'redraw': session_redraw, 'spell': session_spell,
                  'nodict': session_nodict, 'table': session_table, 'templ': session_templ,
-                 'tspeed': session_tspeed, 'ai': session_ai, 'oxspeed': session_oxspeed}.get(os.environ.get('SESSION'), session)(run)
+                 'tspeed': session_tspeed, 'ai': session_ai, 'oxspeed': session_oxspeed,
+                 'scroll': session_scroll}.get(os.environ.get('SESSION'), session)(run)
     b = bytes(s.b)
     if stop:
         b = b[:s.names[stop]]
@@ -3403,8 +3599,8 @@ def main():
                'pagefile': getattr(s, 'pagefile', {}), 'office': getattr(s, 'office', []),
                'hfdate': getattr(s, 'hfdate', False), 'redraws': getattr(s, 'redraws', []),
                'tables': getattr(s, 'tables', []), 'tfiles': getattr(s, 'tfiles', {}),
-               'spell': getattr(s, 'spell', []), 'words': getattr(s, 'words', {}), 'once': getattr(s, 'once', []),
-               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page', 'office', 'redraw', 'spell', 'nodict', 'table', 'templ', 'tspeed', 'ai', 'oxspeed')
+               'spell': getattr(s, 'spell', []), 'timers': getattr(s, 'timers', {}), 'words': getattr(s, 'words', {}), 'once': getattr(s, 'once', []),
+               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page', 'office', 'redraw', 'spell', 'nodict', 'table', 'templ', 'tspeed', 'ai', 'oxspeed', 'scroll')
                   else {})},
               open(os.path.join(run, 'expect.json'), 'w'), indent=1)
 

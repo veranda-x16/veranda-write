@@ -12,7 +12,9 @@
    So a row is drawn the same whether it is drawn after an edit or with
    all the others (W55's check): both read the same hash. While keys come
    (one in the last LIVE_PAUSE frames) mk_pre leaves the row unmarked and
-   noted: the row being typed is looked at in the pause after it (W59).
+   noted: the row being typed is looked at in the pause after it (W59);
+   not while the view scrolls (v_scr, W73: the rows a scroll uncovers are
+   marked as they are drawn, else each would be drawn twice).
 
    Live checking (sp_idle, from the main loop's idle pass when no key
    came for LIVE_PAUSE frames: sppop.c's sp_tick): the noted rows' words
@@ -49,7 +51,7 @@ void __fastcall__ mk_pre(unsigned char i)
     r->mk = 0;
     if (r->y > TA_BOT || sp_nodic())
         return;
-    if ((unsigned char)(cw_jiffies() - sp_kj) < LIVE_PAUSE) {
+    if ((unsigned char)(cw_jiffies() - sp_kj) < LIVE_PAUSE && !v_scr) {
         r->mk = 0x80;                   /* (W59: typing: the row's words looked at in the pause after it) */
         sp_pend = 1;
         return;
@@ -98,9 +100,13 @@ void __fastcall__ mk_dots(unsigned char i)
     }
 }
 
+/* a key waiting, or (W73) live checking took its share of the pass (4
+   frames: the main loop runs again; the rest the passes after) */
+static unsigned char t0;
+
 static unsigned char key_waiting(void)
 {
-    return (pressFlag & SET_KEYPRESS) || cw_keys();
+    return (pressFlag & SET_KEYPRESS) || cw_keys() || (unsigned char)(cw_jiffies() - t0) >= 4;
 }
 
 /* a step of live checking: 1 when it looked something up or drew */
@@ -109,6 +115,7 @@ unsigned char sp_idle(void)
     static unsigned char i, n, pend, res, did, any;
     static struct vrow *r;
     static pos_t lastcur;
+    t0 = cw_jiffies();
     if (!sp_live || sp_nodic()) {
         sp_pend = 0;
         return 0;

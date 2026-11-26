@@ -30,7 +30,7 @@ ALLOW = {
              '_pg_loaddef', '_pp_key', '_pp_open', '_pp_press', '_t_pbreak', '_t_pdf',
              '_sp_fkey', '_sp_tick', '_spp_key', '_spp_press', '_t_tools', '_sp_cfgload', '_ovl_clear',
              '_tb_about', '_tb_cmd', '_tb_key', '_tb_ntempl', '_tb_pbreak', '_tb_start', '_tb_stempl',
-             '_tb_tinsert', '_ai_go'},
+             '_tb_tinsert', '_ai_go', '_t_sbpress', '_t_sbdrag'},   # (W73: the scroll bar's press, the thumb)
     'pgpanel.o': {'_pg_loaddef', '_pg_export', '_pg_field', '_sp_unload'},
     'files.o': {'_sp_unload', '_ox_up', '_ox_down'},
     'oxnote.o': {'_ox_down'},   # (W66: callb, its own bank given back)
@@ -38,7 +38,7 @@ ALLOW = {
     'tools.o': {'_m_item', '_tb_mtext'},   # (the lists' routine: the kernel calls it in appBank, overlay 1)
     'view.o': {'_v_all', '_v_frame', '_v_refresh', '_t_toolbar', '_v_fix_cursor', '_v_scroll',
                '_v_title', '_t_status'},
-    'view2.o': {'_t_sbar'},
+    'view2.o': {'_t_sbar', '_e_vw_move'},   # (W73: vscroll.s, overlay 10, through callb)
     'popup.o': {'_menu_make'},
     'tbar.o': {'_t_ruler'},
     'cbuf.o': {'_sw_stamp'},    # (data in overlay 11's bank: cbuf.c maps it first, sw_tbank)

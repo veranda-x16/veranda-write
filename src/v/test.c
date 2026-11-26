@@ -21,7 +21,7 @@
 #include "view.h"
 #include "../spell.h"
 
-extern unsigned char play_bank, play_st, play_t0[4];
+extern unsigned char play_bank, play_st, play_t0[4], play_lfm;
 unsigned int __fastcall__ sw_xfer(unsigned char h, unsigned char b, unsigned int n, unsigned char w);
 void play_go(void);
 void Player(void);
@@ -335,6 +335,8 @@ static void e_test_drawn(void)
     unsigned long a, b;
     unsigned char c[4];
     char *p = line;
+    if (v_more)
+        return;                         /* (W73: rows still to draw: timed when they are) */
     if (play_st) {
         /* a timed key ('Q', 'R') drawn: "CW LAT keys cycles", the keys
            taken since the last drawing, the time since the first was put */
@@ -349,6 +351,7 @@ static void e_test_drawn(void)
         memcpy(p, "CW LAT ", 7);
         p = hexn(p + 7, lat_k);
         p = hexn(p, b - a);
+        p = hexn(p, play_lfm);          /* (the main loop's longest pause, frames) */
         *p = 0;
         LogText(line);
         p = line;

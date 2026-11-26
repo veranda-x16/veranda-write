@@ -212,6 +212,8 @@ unsigned char __fastcall__ file_dlg(unsigned char mode, const char *title, char 
 void cw_aside(void)
 {
     unsigned char k;
+    if (v_stale)
+        v_sync();                       /* (W73: the back screen the front's, as it is packed) */
     if (dlg_bank) {
         BankFree(dlg_bank);
         dlg_bank = 0;

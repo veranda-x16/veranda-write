@@ -21,6 +21,7 @@
 .export _rr_bank, _rr_x, _rr_s, _rr_n, _rr_top, _rr_mode, _rr_fb, _rr_fb2, _rr_split, _rr_fb3, _rr_split2, _rr_fbase, _rr_rowlen, _rr_h, _rr_a, _rr_w
 .export _rr_y, _rr_bt, _rr_bh, _rr_lh, _rr_ylo, _rr_yhi
 .importzp ptr1, ptr2, ptr3, ptr4, tmp1, tmp2, tmp3, tmp4
+.import _rb_gen                 ; (view.c: counts what the row bank was cleared for, W73)
 
 RB      = $A000                 ; the row buffer
 RBW     = 68
@@ -75,6 +76,7 @@ ya:     .res 3
 
 ; the shift tables and the row addresses into the row bank (once)
 _rr_tables:
+	inc _rb_gen
 	lda $00
 	pha
 	lda _rr_bank
@@ -137,6 +139,7 @@ _rr_tables:
 
 ; the buffer's first rr_bh rows cleared
 _rr_clear:
+	inc _rb_gen
 	lda $00
 	pha
 	lda _rr_bank

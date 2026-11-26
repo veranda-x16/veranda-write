@@ -67,3 +67,22 @@ void t_sbar(void)
     sb_n = n;
 }
 
+/* (W73) a press in the scroll bar (r11: y; ui.c's press): the arrows
+   three lines, the track above or below the thumb a screen; on the
+   thumb, t_arg 2: dragged (view2.c's t_sbdrag), held where it was taken */
+void t_sbpress(void)
+{
+    t_arg = 0;
+    if (r11 <= SB_UP)
+        view_scroll(-3);
+    else if (r11 >= SB_DN)
+        view_scroll(3);
+    else if (r11 < SB_Y(sb_a))
+        view_scroll(1 - (int)vn);
+    else if (r11 >= SB_Y(sb_a + sb_n))
+        view_scroll(vn - 1);
+    else {
+        sb_off = (unsigned char)(r11 - SB_Y(sb_a));
+        t_arg = 2;
+    }
+}

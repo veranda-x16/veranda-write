@@ -62,6 +62,8 @@
 #    stress fixtures (tools/oxstress.py) opened, timed, against the host;
 #    (W68: SESSION=ai, R49 at 512 KB, ASKFAKE=1) AI help with a stand-in
 #    for Veranda Ask (tools/askfake: nothing sent anywhere);
+#    (W73: SESSION=scroll, R49 at 512 KB) scrolling by every way, timed,
+#    each step against a full drawing;
 #    tools/check.py: the states (characters, styles, paragraphs)
 #    and the files against the script's model; the timings
 # 4. screenshots: the session stopped at points (build/gate/*.png; the
@@ -490,6 +492,24 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 		|| fail "the AI box over the page's text: not opaque"
 	ok "the AI help box opaque over a long list (its rectangle as over blank paper, its frame drawn)"
 	unset SESSION RAM NODICT ASKFAKE
+fi
+# (W73) scrolling timed and checked (tools/script.py's session_scroll:
+# SESSION=scroll, a host folder under R49 at 512 KB): a plain long
+# document, the converted "Veranda Desktop Guide.docx" (headings, lists,
+# tables) and a document with page bands (a header and a footer): a line
+# down and up at the screen's edge, a held arrow key, the wheel a notch
+# and five at once, Page Down and Up, the scroll bar's arrows and track,
+# its thumb dragged, a selection made by Shift+Down and scrolled by the
+# wheel, the spelling marks on; after each, the screen against a full
+# drawing (src/v/test.c's redraw check, W55); the times and the main
+# loop's longest pause (tools/check.py: "keys ...", "time ...")
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=scroll RAM=512
+	TIMEOUT=900 tools/run.sh "$OUT/scroll" "" "$R49" > /dev/null || fail "the scroll session"
+	echo "== scrolling (host folder, R49, 512 KB)"
+	chk "$OUT/scroll" || fail "the scroll session"
+	ok "scrolling: every step drawn as a full drawing draws it, timed"
+	unset SESSION RAM
 fi
 # the per-key timings (W43; tools/speed.sh: SESSION=speed, a host folder
 # under R49 at 512 KB): typing at a document's end, in a long paragraph,
