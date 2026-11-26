@@ -111,6 +111,13 @@ def check_one(name, cwr, want, log, bad):
                 continue
             if got != v:
                 bad.append('%s: page %s %r, want %r' % (name, k, got, v))
+    if 'tcodes' in want:
+        # (1.6) the table's codes: from its first paragraph, in order
+        tc = d.tables()
+        first = tc[0][0] if tc else 0
+        got_t = [[n - first, k, a] for n, k, a in tc]
+        if got_t != want['tcodes']:
+            bad.append('%s: the table\'s codes %r, want %r' % (name, got_t, want['tcodes']))
     if 'pbreaks' in want and d.pbreaks() != want['pbreaks']:
         bad.append('%s: %d page breaks, want %d' % (name, d.pbreaks(), want['pbreaks']))
     m = re.search(r'lost (\d+), tables (\d+), pictures (\d+), boxes (\d+), notes (\d+), comments (\d+), '
@@ -177,7 +184,14 @@ def main():
                 k += 1
             if d.pbreaks() < exp[name].get('pbreaks', 0):
                 bad.append('%s: %d page breaks, want %d' % (os.path.basename(src), d.pbreaks(), exp[name]['pbreaks']))
-            # (a table through LibreOffice keeps its cells: as text the same)
+            # (1.6) a table through LibreOffice: its rows and cells (their
+            # widths LibreOffice's)
+            if 'tcodes' in exp[name]:
+                w = exp[name]['tcodes']
+                want_rc = (sum(1 for x in w if x[1] == 0x14), sum(1 for x in w if x[1] == 0x15))
+                got_rc = cwrd.tab_sum(d.tables())[:2]
+                if got_rc != want_rc:
+                    bad.append('%s: the table %d rows, %d cells; want %d, %d' % ((os.path.basename(src),) + got_rc + want_rc))
             print('office %s (LibreOffice %s): %s' % (os.path.basename(src), 'ok' if len(bad) == b0 else 'FAIL',
                                                        r.stdout.split(';', 1)[-1].strip()))
     for b in bad:

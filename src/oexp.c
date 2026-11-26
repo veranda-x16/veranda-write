@@ -40,7 +40,11 @@ unsigned long oe_size;                  /* (the X16's: main.c, main RAM) */
 
 static unsigned char kind, pass, err;
 static unsigned long psize;
-static char oname[40], odate[24];       /* {name}, {date} (iobuf's at the start: the caller's) */
+/* {name}, {date} (iobuf's at 32 and 0 at the start: the caller's; then
+   kept in iobuf's bytes IBUF and OBUF leave free, 1.6: this overlay's
+   room) */
+#define oname ((char *)iobuf + 192)
+#define odate ((char *)iobuf + 232)
 
 /*---------------------------------------------------------------
   CRC-32 (the X16's: v/ocrc.s, its table made at the start)
@@ -215,26 +219,20 @@ static pos_t rp;
 static unsigned char npoll;
 #endif
 
-/* (now and then while the text is read) "Exporting 45%..." */
+/* (now and then while the text is read) "Exporting 45%..." (the X16's
+   status bar and Esc: v/oxnote.c's oe_poll, overlay 18, for this one's
+   room since 1.6's tables) */
+#ifndef CW_HOST
+unsigned char FASTCALL oe_poll(unsigned char pass);   /* (oe_rp: main RAM) */
+extern pos_t oe_rp;
+#endif
 static void poll(void)
 {
 #ifndef CW_HOST
-    static unsigned char pc;
-    static char *p;
     if (++npoll & 15)
         return;
-    pc = (unsigned char)(pass * 50 + rp * 50 / (tx.total + 1));
-    p = sl;
-    strcpy(p, "Exporting ");
-    p += 10;
-    if (pc >= 10)
-        *p++ = (char)('0' + pc / 10);
-    *p++ = (char)('0' + pc % 10);
-    strcpy(p, "%...");
-    strcpy(sr, "Esc: stop");
-    dispBufferOn = ST_WR_FORE | ST_WR_BACK;
-    vr_win_status(&win, sl, sr);
-    if (cw_esc())
+    oe_rp = rp;
+    if (oe_poll(pass))
         err |= OE_ESC;
 #endif
 }
@@ -261,7 +259,7 @@ static int rb(void)
 /*---------------------------------------------------------------
   the ZIP
  ---------------------------------------------------------------*/
-#define NPART 10
+#define NPART 9                         /* (a .docx's nine parts at most) */
 static unsigned char np, tk;
 static unsigned long p_crc[NPART], p_size[NPART], p_at[NPART];
 static unsigned char p_k[NPART];
@@ -280,10 +278,11 @@ static void FASTCALL le(unsigned long v, unsigned char n)
 #define K_HDR  7
 #define K_FTR  8
 #define K_MIME 9
+static const char wsty[] = "word/styles.xml";   /* (and the .odt's styles.xml: its end) */
 static const char *const pname[14] = {
     "[Content_Types].xml", "_rels/.rels", "word/_rels/document.xml.rels", "word/document.xml",
-    "word/styles.xml", "word/settings.xml", "word/numbering.xml", "word/header1.xml", "word/footer1.xml",
-    "mimetype", "META-INF/manifest.xml", "content.xml", "styles.xml", "meta.xml"
+    wsty, "word/settings.xml", "word/numbering.xml", "word/header1.xml", "word/footer1.xml",
+    "mimetype", "META-INF/manifest.xml", "content.xml", wsty + 5, "meta.xml"
 };
 
 /* a local header or the central directory's record (cd) of part i */
@@ -296,18 +295,14 @@ static void FASTCALL zhead(unsigned char i, unsigned char cd)
     le(cd ? 0x02014B50UL : 0x04034B50UL, 4);
     if (cd)
         le(20, 2);                      /* version made by: 2.0 */
-    le(20, 2);                          /* version needed: 2.0 */
-    le(0, 4);                           /* flags; stored */
+    le(20, 6);                          /* version needed: 2.0; flags; stored */
     le(0, 4);                           /* time, date */
     le(p_crc[i], 4);
     le(p_size[i], 4);
     le(p_size[i], 4);
-    le(n, 2);
-    le(0, 2);                           /* no extra field */
+    le(n, 4);                           /* (and no extra field) */
     if (cd) {
-        le(0, 4);                       /* comment, disk */
-        le(0, 2);                       /* attributes */
-        le(0, 4);
+        le(0, 10);                      /* comment, disk, attributes */
         le(p_at[i], 4);
     }
     while (*nm)
@@ -387,20 +382,17 @@ static void hcount(void)
 }
 
 /* a field's kind at s ("{page}" 1, "{pages}" 2, "{date}" 3, "{name}" 4) */
+static const unsigned char flen[5] = { 0, 6, 7, 6, 6 };
+static const char *const fname[5] = { 0, "{page}", "{pages}", "{date}", "{name}" };
+
 static unsigned char FASTCALL fieldk(const char *s)
 {
-    if (!memcmp(s, "{page}", 6))
-        return 1;
-    if (!memcmp(s, "{pages}", 7))
-        return 2;
-    if (!memcmp(s, "{date}", 6))
-        return 3;
-    if (!memcmp(s, "{name}", 6))
-        return 4;
+    static unsigned char k;
+    for (k = 1; k < 5; ++k)
+        if (!memcmp(s, fname[k], flen[k]))
+            return k;
     return 0;
 }
-
-static const unsigned char flen[5] = { 0, 6, 7, 6, 6 };
 
 /* the header's or footer's text: its parts apart by tabs, its fields */
 static void hftext(void)
@@ -446,13 +438,11 @@ static unsigned char lk;                /* (.odt) the list open: its kind, 0 non
 static unsigned char ps0;               /* (.odt) the first paragraph's style (its master page) */
 static unsigned char firstp;            /* (.odt) the first paragraph not written yet */
 static unsigned char ps, pv;            /* the paragraph style written; (.odt) its variant: 1 b, 2 F */
+static unsigned char tin, tf, tn, ko;   /* (1.6) in a table; its rows' flags; tables so far; the .odt's
+                                           templates' distance from the .docx's (T_OTBL - T_DTBL) */
 static const struct pstyle *pp;
 static unsigned long vn;                /* {n} */
 
-static unsigned char FASTCALL ismono(unsigned char s)
-{
-    return strstr(fontname[sty[s].font], "Mono") != 0;
-}
 
 static void FASTCALL vtpl(unsigned char t, unsigned long n)
 {
@@ -460,34 +450,101 @@ static void FASTCALL vtpl(unsigned char t, unsigned long n)
     tpl(t);
 }
 
+/* (1.6) a table: its row's widths (the first row's: tr_n, tr_w, tabedit.c's
+   tb_row, overlay 28 on the X16); a cell's end (a new cell's start, k
+   K_TCELL), a row's (K_TROW), the table's (0) */
+#ifdef CW_HOST
+#define ROWAT(p) tb_row(p)
+#define TB_SCAN() tb_used(iobuf + 160)
+#else
+#define TB_SCAN() (t_arg = 13, callb(bank28, tb_do))   /* (TD_USED, v/cwv.h) */
+extern unsigned char bank28, t_arg;
+void tb_do(void);
+void __fastcall__ callb(unsigned char b, void (*f)(void));
+static void FASTCALL ROWAT(pos_t p)
+{
+    tb_p = p;
+    t_arg = 12;                         /* (TD_ROWAT, v/cwv.h) */
+    callb(bank28, tb_do);
+}
+#endif
+
+/* (.odt) the list open closed */
+static void lclose(void)
+{
+    if (lk)
+        tpl(T_OLE);
+    lk = 0;
+}
+
+static void FASTCALL tclose(unsigned char k)
+{
+    lclose();
+    tpl(T_DTCE + ko);
+    if (k == K_TCELL)
+        return;
+    tpl(T_DTRE + ko);
+    if (!k) {
+        tpl(T_DTBLE + ko);
+        tin = 0;
+    }
+}
+
 /* the document's paragraphs (document.xml's body, content.xml's text) */
 static void body(void)
 {
     static int c;
-    static unsigned char pb, run, t, k, pk, lastk;
+    static unsigned char pb, run, t, k, pk, lastk, tk, w;
+    static pos_t p0;
     rp = 0;
     ri = rn = 0;
     cs = 0;
     nnum = 0;
     pbn = lk = lastk = 0;
     firstp = 1;
+    tin = tn = 0;
     c = rb();
     for (;;) {
         poll();
         if (err)
             break;
-        /* a paragraph: its codes first */
-        ps = pb = 0;
-        while (c == K_PS || c == K_PB) {
+        /* a paragraph: its codes first (1.6: a table's too) */
+        p0 = rp - rn + ri - 1;
+        ps = pb = tk = 0;
+        while (c == K_PS || c == K_PB || IS_TKIND(c)) {
             t = (unsigned char)c;
             k = (unsigned char)rb();
             rb();
             if (t == K_PS)
                 ps = k;
-            else
+            else if (t == K_PB)
                 pb = 1;
+            else if (t == K_TROW) {
+                tk = t;
+                tf = k;
+            } else if (t == K_TCELL) {
+                if (tk != K_TROW)
+                    tk = t;
+                w = k;
+            } else if (t == K_TPARA && !tk)
+                tk = t;
             c = rb();
         }
+        if (!tin && tk != K_TROW)
+            tk = 0;                     /* (a cell's code with no row: a paragraph) */
+        if (tin && tk != K_TPARA)
+            tclose(tk);
+        if (tk == K_TROW) {
+            if (!tin) {
+                lclose();               /* (W71: a list before the table closed first, not in its cell) */
+                ROWAT(p0);              /* (the grid: the first row's widths) */
+                vtpl(T_DTBL + ko, ++tn);
+            }
+            tpl(T_DTR + ko);
+        }
+        if (tk == K_TROW || tk == K_TCELL)
+            vtpl(T_DTC + ko, w);
+        tin = tk != 0;
         if (ps >= npar)
             ps = 0;
         pp = &par[ps];
@@ -567,16 +624,17 @@ static void body(void)
         c = rb();                       /* (past its CR) */
         if (c < 0) {
             /* (the CR was the last byte: an empty paragraph after it) */
-            if (lk)
-                tpl(T_OLE);
-            lk = 0;
+            if (tin)
+                tclose(0);
+            lclose();
             tpl(kind == OK_DOCX ? T_DPEMPTY : pbn ? T_OPB : T_OPEMPTY);
             pbn = 0;
             break;
         }
     }
-    if (lk)
-        tpl(T_OLE);
+    if (tin)
+        tclose(0);
+    lclose();
     if (pbn)
         tpl(T_OPB);
 }
@@ -595,7 +653,7 @@ static void FASTCALL opstyle(unsigned char i, unsigned char v)
 #define HROOM(m) ((m) / 2)
 #define NOFIRST() ((pgs.flags & PS_NOFIRST) && (pgs.head[0] || pgs.foot[0]))
 
-static unsigned char li;                /* (val's loops: val is called again inside them) */
+static unsigned char li, cm;            /* (val's loops: val is called again inside them) */
 
 static void FASTCALL val(unsigned char v)
 {
@@ -608,29 +666,11 @@ static void FASTCALL val(unsigned char v)
     case V_BODY:
         body();
         break;
-    case V_HREF:
-        if (pgs.head[0])
-            tpl(T_HREF);
-        break;
-    case V_FREF:
-        if (pgs.foot[0])
-            tpl(T_FREF);
-        break;
-    case V_CTH:
-        if (pgs.head[0])
-            tpl(T_CTH);
-        break;
-    case V_CTF:
-        if (pgs.foot[0])
-            tpl(T_CTF);
-        break;
-    case V_RLH:
-        if (pgs.head[0])
-            tpl(T_RLH);
-        break;
-    case V_RLF:
-        if (pgs.foot[0])
-            tpl(T_RLF);
+    case V_HREF: case V_FREF: case V_CTH: case V_CTF: case V_RLH: case V_RLF:
+        /* (the header's or the footer's, when there is one: T_CTH ... T_FREF in a row) */
+        i = v == V_HREF ? T_HREF : v == V_FREF ? T_FREF : T_CTH + (v - V_CTH);
+        if ((i - T_CTH) & 1 ? pgs.foot[0] : pgs.head[0])
+            tpl(i);
         break;
     case V_PW:
         otw(pgs.w);
@@ -733,7 +773,7 @@ static void FASTCALL val(unsigned char v)
         tpl(T_CENTER - 1 + (unsigned char)vn);
         break;
     case V_FONT:
-        tpl(ismono(cs) ? T_COURIER : T_ARIAL);
+        tpl(strstr(fontname[sty[cs].font], "Mono") ? T_COURIER : T_ARIAL);
         break;
     case V_RB:
         if (f & SF_BOLD)
@@ -765,6 +805,13 @@ static void FASTCALL val(unsigned char v)
         for (cs = 0; cs < nsty; ++cs)
             vtpl(T_OTS, cs);
         cs = 0;
+        /* (1.6) a column style for each cell's width the text has
+           (tabedit.c's tb_used: their bits in iobuf + 160, which IBUF
+           has free until the text is read) */
+        TB_SCAN();
+        for (li = 1, cm = 2; li; ++li, cm = cm << 1 | cm >> 7)
+            if (iobuf[160 + (li >> 3)] & cm)
+                vtpl(T_OCOLS, li);
         break;
     case V_OPAGE:
         tpl(T_OPAGE);
@@ -843,33 +890,52 @@ static void FASTCALL val(unsigned char v)
     case V_UL:
         tpl(f & SF_ULINE ? T_SOLID : T_NONE);
         break;
+    /* (1.6) tables */
+    case V_BV:
+        tpl(tf & TR_NOGRID ? T_NIL : T_SINGLE);
+        break;
+    case V_GRID:
+        for (li = 0; li < tr_n; ++li)
+            vtpl(T_DGC + ko, tr_w[li]);
+        break;
+    case V_TW:
+        otw((unsigned int)((vn * tw_w() + 128) >> 8));
+        break;
+    case V_TCS:
+        oc(tf & TR_NOGRID ? 'N' : 'G');
+        break;
     }
 }
+
+/* the parts in their order: a .docx's (document.xml before numbering.xml:
+   the numbered lists counted for it; then the header and the footer),
+   an .odt's (the mimetype first) */
+static const unsigned char pseq[] = {
+    T_CT, T_RELS, T_DREL, T_DOC, T_STY, T_SET, T_NUM, 0xFF,
+    K_MIME, T_MAN, T_OCON, T_OSTY, T_META, 0xFF
+};
 
 /* the document as a .docx (k OK_DOCX) or an .odt; iobuf holds {date}
    (at 0) and {name} (at 32) */
 unsigned char FASTCALL oe_write(unsigned char k)
 {
+    static unsigned char pi;
     kind = k;
+    ko = k == OK_DOCX ? 0 : T_OTBL - T_DTBL;
     err = 0;
     np = 0;
     zat = 0;
-    strncpy(odate, (char *)iobuf, sizeof odate - 1);
-    strncpy(oname, (char *)iobuf + 32, sizeof oname - 1);
+    strncpy(odate, (char *)iobuf, 23);
+    odate[23] = 0;
+    strncpy(oname, (char *)iobuf + 32, 39);
+    oname[39] = 0;
     crc_init();
-    ps0 = 0;
-    if (tx.total >= 3 && cb_byte(&tx, 0) == K_PS)
-        ps0 = cb_byte(&tx, 1);
+    ps0 = par_at(0);
     if (ps0 >= npar)
         ps0 = 0;
-    if (k == OK_DOCX) {
-        part(T_CT);
-        part(T_RELS);
-        part(T_DREL);
-        part(T_DOC);                    /* (first: the numbered lists counted for numbering.xml) */
-        part(T_STY);
-        part(T_SET);
-        part(T_NUM);
+    for (pi = k == OK_DOCX ? 0 : 8; (k = pseq[pi]) != 0xFF; ++pi)
+        part(k);
+    if (kind == OK_DOCX) {
         hk = 1;
         hcount();
         if (pgs.head[0])
@@ -878,12 +944,6 @@ unsigned char FASTCALL oe_write(unsigned char k)
         hcount();
         if (pgs.foot[0])
             part(K_FTR);
-    } else {
-        part(K_MIME);
-        part(T_MAN);
-        part(T_OCON);
-        part(T_OSTY);
-        part(T_META);
     }
     if (!err)
         zend();

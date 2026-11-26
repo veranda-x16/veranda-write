@@ -25,6 +25,7 @@ RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 CTP = 'application/vnd.openxmlformats-officedocument.wordprocessingml.'
 PNS = 'http://schemas.openxmlformats.org/package/2006/relationships'
 ONS = ('xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+       'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" '
        'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
        'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
        'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" '
@@ -127,6 +128,9 @@ T = [
      + '</office:font-face-decls><office:automatic-styles>{ostyles}'
      + olist('LB', 'bullet', 'text:bullet-char="' + BULLET + '"', '-0.2in')
      + olist('LN', 'number', 'style:num-suffix="." style:num-format="1"', '-0.3in')
+     + '<style:style style:name="Tb" style:family="table"><style:table-properties table:align="left"/></style:style>'
+     + ''.join('<style:style style:name="Tc%s" style:family="table-cell"><style:table-cell-properties '
+               'fo:padding="0.04in" fo:border="%s"/></style:style>' % (k, b) for k, b in (('G', '0.5pt solid #000000'), ('N', 'none')))
      + '</office:automatic-styles><office:body><office:text>{body}</office:text></office:body></office:document-content>'),
     ('osty', OXML + '<office:document-styles ' + ONS + '><office:font-face-decls>' + FFD
      + '</office:font-face-decls><office:styles><style:default-style style:family="paragraph">'
@@ -243,12 +247,37 @@ T = [
     ('of2', '<text:page-count>1</text:page-count>'),
     ('of3', '<text:date>{fres}</text:date>'),
     ('of4', '<text:file-name text:display="name">{fres}</text:file-name>'),
+    # (1.6) tables: the .docx's (a grid of the first row's widths, each
+    # cell its own; borders single or nil) and the .odt's (a column
+    # style a width used, Tw<256ths>; the cells' TcG, TcN)
+    ('dtbl', '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="{bv}" w:sz="4"/><w:left '
+     'w:val="{bv}" w:sz="4"/><w:bottom w:val="{bv}" w:sz="4"/><w:right w:val="{bv}" w:sz="4"/><w:insideH w:val="{bv}" '
+     'w:sz="4"/><w:insideV w:val="{bv}" w:sz="4"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>'
+     '{grid}</w:tblGrid>'),
+    ('dgc', '<w:gridCol w:w="{tw}"/>'),
+    ('dtr', '<w:tr>'),
+    ('dtc', '<w:tc><w:tcPr><w:tcW w:w="{tw}" w:type="dxa"/></w:tcPr>'),
+    ('dtce', '</w:tc>'),
+    ('dtre', '</w:tr>'),
+    ('dtble', '</w:tbl>'),
+    # (the .odt's in the same order: oexp.c's T_DTBL + 7 ...)
+    ('otbl', '<table:table table:name="Table{n}" table:style-name="Tb">{grid}'),
+    ('ocol', '<table:table-column table:style-name="Tw{n}"/>'),
+    ('otr', '<table:table-row>'),
+    ('otc', '<table:table-cell table:style-name="Tc{tcs}" office:value-type="string">'),
+    ('otce', '</table:table-cell>'),
+    ('otre', '</table:table-row>'),
+    ('otble', '</table:table>'),
+    ('single', 'single'),
+    ('nil', 'nil'),
+    ('ocols', '<style:style style:name="Tw{n}" style:family="table-column"><style:table-column-properties '
+     'style:column-width="{tw}"/></style:style>'),
 ]
 
 # the values (oexp.c's val(): their numbers)
 V = '''title body href fref pw ph mt mr mb ml mh mf titlepg cth ctf rlh rlf nums hft hfs dtabc dtabr hjc htext
 n dps bef aft line il ir dfirst djc jc font rb ri ru finstr fres ostyles opage omt omb ohr ofr omt1 omb1 ohf ofirst
-pname opar omp if lh al obrk sz wt st ul pref tabc tabr ohp h2'''.split()
+pname opar omp if lh al obrk sz wt st ul pref tabc tabr ohp h2 bv grid tw tcs'''.split()
 
 
 def vcode(name):

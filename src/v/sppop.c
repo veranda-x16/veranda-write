@@ -462,6 +462,13 @@ void t_tools(void)
         getdict();                      /* (W61: Get dictionaries) */
         return;
     }
+    if (k == 7) {                       /* (W68: AI help on or off: the AI menu; kept in the settings) */
+        sp_cfg ^= SPC_NOAI;
+        callb(bank24, so_save);         /* (and the bar's items: v/spcfgio.c's live) */
+        DoMenu(&mbar, 0);
+        set_status(sp_cfg & SPC_NOAI ? "AI help off: no AI menu" : "AI help on: the AI menu");
+        return;
+    }
     if (k == 0) {
         callb(bank25, spp_open);
         return;

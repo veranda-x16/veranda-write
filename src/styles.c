@@ -93,35 +93,7 @@ pos_t FASTCALL codes_before(pos_t p)
     return p;
 }
 
-/* the paragraphs, through the line table: a paragraph's first line has
-   LF_FIRST */
-pos_t FASTCALL par_start(pos_t p)
-{
-    struct line l;
-    unsigned int i;
-    lt_find(p);
-    i = lf_i;
-    for (;;) {
-        lt_get(i, &l);
-        if ((l.f & LF_FIRST) || !i)
-            break;
-        --i;
-    }
-    return lt_start(i);
-}
-
-pos_t FASTCALL par_next(pos_t p)
-{
-    struct line l;
-    unsigned int i;
-    lt_find(p);
-    for (i = lf_i; i < lt_n; ++i) {
-        lt_get(i, &l);
-        if (l.f & LF_PARA)
-            return i + 1 < lt_n ? lt_start(i + 1) : 0xFFFFFFFFUL;
-    }
-    return 0xFFFFFFFFUL;
-}
+/* (par_start, par_next: tabpar.c, overlay 29 on the X16) */
 
 unsigned char FASTCALL par_at(pos_t q)
 {
@@ -169,6 +141,8 @@ unsigned char FASTCALL style_at(pos_t p)
 unsigned char FASTCALL style_typing(pos_t p)
 {
     pos_t q = codes_before(p);
+    while (q >= 3 && IS_TKIND(cb_byte(&tx, q - 1)))
+        q = codes_before(q - 3);        /* (1.6: a cell's codes) */
     if (q >= 3 && cb_byte(&tx, q - 1) == K_PS)
         q -= 3;                         /* (a paragraph's start) */
     if (q == 0 || cb_byte(&tx, q - 1) == CH_CR)

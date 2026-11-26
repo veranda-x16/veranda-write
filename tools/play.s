@@ -56,7 +56,7 @@
 .include "x16hw.inc"
 
 .export _play_bank, _play_go, _play_slow, _play_t0, _play_st
-.import _cw_idle, _test_log, _barx, _bank16
+.import _cw_idle, _test_log, _barx, _bankt
 
 GAP     = 6
 HUNG    = 30000                 ; frames (500 s: a 4 MB document opens in about 5 minutes)
@@ -66,7 +66,7 @@ KBDBUF_PEEK = $FEBD
 .segment "DATA"
 
 _play_bank: .byte 0
-cur:	.word $B000             ; (the session: in the test overlay's bank, after its code)
+cur:	.word $A000             ; (the session: in a bank of its own, 1.6)
 wait:	.byte 60
 px:	.word 320
 py:	.word 240
@@ -92,8 +92,10 @@ _play_t0: .res 4                ; the clock when it was put
 
 .segment "CODE"
 
-; (W56) the player's code is in overlay 16's bank (the test build's main
-; RAM had no room for it): the interrupt calls this, which maps it, and
+; (W56) the player's code is in the test overlay's bank (1.6; overlay
+; 16's until then: the test build's main RAM had no room for it, and
+; overlay 16 wanted its room for the on-demand overlays' loader): the
+; interrupt calls this, which maps it, and
 ; maps back the bank that was (the kernel's, an overlay's); the record's
 ; bytes (in the session's bank) and the ROM's modifiers (RAM bank 0) are
 ; read and written here, in main RAM
@@ -106,7 +108,7 @@ _play_go:
 
 Tramp:	lda $00
 	pha
-	lda _bank16
+	lda _bankt
 	sta $00
 	jsr Player              ; (a: the buttons; c set)
 	tay
@@ -158,7 +160,7 @@ _play_slow:
 	bne @o
 @r:	rts
 
-.segment "OVERLAY16"
+.segment "OVERLAY30"
 
 Player:	jsr rep
 	lda bn

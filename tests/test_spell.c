@@ -500,12 +500,18 @@ static void test_spcfg(void)
     memcpy(b, "WCFG\x02\x01\x02\x55\x66\x77", 10);
     CHECK(cfg_file(path, b, 10) == (SPC_NOMARK | LANG_PL), "spcfg: a later version's longer file: its first fields");
     memcpy(b, "WCFG\x01\xFE\x07", SPC_LEN);
-    CHECK(cfg_file(path, b, SPC_LEN) == (SPC_ASK | LANG_EN), "spcfg: an unknown language: English; unknown flags passed over");
+    CHECK(cfg_file(path, b, SPC_LEN) == (SPC_ASK | SPC_NOAI | LANG_EN), "spcfg: an unknown language: English; unknown flags passed over");
+    /* (W68) AI help off: the flags' bit 2; a file before it (bit 2 0): on */
+    sp_cfgmake(b, SPC_NOAI | LANG_EN);
+    CHECK(!memcmp(b, "WCFG\x01\x04\x01", SPC_LEN), "spcfg: AI help off: bit 2");
+    CHECK(cfg_file(path, b, SPC_LEN) == (SPC_NOAI | LANG_EN), "spcfg: AI help off read back");
+    memcpy(b, "WCFG\x01\x03\x02", SPC_LEN);
+    CHECK(!(cfg_file(path, b, SPC_LEN) & SPC_NOAI), "spcfg: a W60 file: AI help on");
     memcpy(b, "WCFG\x01\x00\x00", SPC_LEN);
     CHECK(cfg_file(path, b, SPC_LEN) == LANG_EN, "spcfg: language 0: English");
     memcpy(b, "WCFG\x01\x00\x03", SPC_LEN);
     CHECK(cfg_file(path, b, SPC_LEN) == SPC_KEYB, "spcfg: the keyboard's");
-    for (f = 0; f < 4; ++f)
+    for (f = 0; f < 8; ++f)
         for (l = LANG_EN; l <= SPC_KEYB; ++l) {
             c = (unsigned char)(f << 2 | l);
             sp_cfgmake(b, c);

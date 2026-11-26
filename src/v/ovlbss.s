@@ -3,7 +3,8 @@
 ; bank and leaves the BSS after it as the bank held it (Veranda's V37),
 ; which is the program's own earlier values when it is started again in
 ; the same session (and anything on a machine just switched on). A row
-; an overlay (1-22, then the test build's 27): the address of its bank's
+; an overlay (the records: 1-16, then 27-29, the tables', and the test build's 30;
+; spelling's and the office files' are cleared when v/spload.c loads them): the address of its bank's
 ; variable, its BSS's address and size (0: none). tools/spovl.py fills
 ; it in after the link, from labels.txt (as it does sp_want).
 ;
@@ -11,6 +12,6 @@
 
 .export _ovl_bss
 
-.segment "OVL19RO"
+.segment "OVL9RO"
 _ovl_bss:
-	.res 23 * 6, 0
+	.res 20 * 6, 0

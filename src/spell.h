@@ -101,19 +101,20 @@ void sp_ignore(void);                   /* sp_lw ignored from now (this session)
 unsigned char sp_adduser(void);         /* sp_lw into the user's words (and their file): 0 done */
 void sp_flush(void);                    /* the hash emptied (the lists changed, another language) */
 void FASTCALL sp_drop(unsigned char all);   /* 0: sp_flush; 1: every bank given back, all forgotten */
-/* (v/spload.c, overlay 22) the spelling overlays read from SPELL.OVL
+/* (v/spload.c, overlay 16) the spelling overlays read from SPELL.OVL
    (t_arg 1: done), given back (with sp_drop(1)); sp_on (main RAM):
    loaded, else loaded now; 0 not there */
 void sp_load(void), sp_unload(void);
 unsigned char sp_on(void);
 extern unsigned char sp_nofile;         /* (main RAM) SPELL.OVL not there or not this build's */
 /* (W60) the settings, /VERANDA/.SYSTEM/WRITE.CFG (src/spcfg.c: the
-   format; v/spload.c, overlay 22: read at the start, written when the
+   format; v/spcfgio.c, overlay 7: read at the start, written when the
    Tools menu changes them); sp_cfg (main RAM): LANG_EN alone the defaults */
 #define SPC_LANG   0x03                 /* the language of new documents: LANG_EN (the default), LANG_PL, SPC_KEYB */
 #define SPC_KEYB   3                    /* (SPC_LANG) the keyboard's: Polish when Veranda's keyboard setting is */
 #define SPC_NOMARK 0x04                 /* misspellings not marked as you type */
 #define SPC_ASK    0x08                 /* spelling only when asked: nothing loaded or marked before */
+#define SPC_NOAI   0x10                 /* (W68) AI help off: no AI menu (the file's flags' bit 2) */
 #define SPC_LEN    7                    /* the file's bytes (version 1) */
 extern unsigned char sp_cfg;
 unsigned char FASTCALL sp_cfgparse(const unsigned char *b, unsigned int n);

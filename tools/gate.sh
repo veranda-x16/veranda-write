@@ -57,6 +57,11 @@
 #    dictionaries: quiet while typing, F7's panel, Tools > Get dictionaries (the
 #    requests for Veranda's desktop and Veranda Update, put aside and
 #    back), a dictionary that arrives while Write runs found;
+#    (W71: SESSION=oxspeed, R49 at 512 KB, a host folder and an SD card
+#    image) the user's kind of .docx (LibreOffice's, from HTML), the
+#    stress fixtures (tools/oxstress.py) opened, timed, against the host;
+#    (W68: SESSION=ai, R49 at 512 KB, ASKFAKE=1) AI help with a stand-in
+#    for Veranda Ask (tools/askfake: nothing sent anywhere);
 #    tools/check.py: the states (characters, styles, paragraphs)
 #    and the files against the script's model; the timings
 # 4. screenshots: the session stopped at points (build/gate/*.png; the
@@ -112,6 +117,10 @@ mkdir -p build/desk
 cl65 -t none --cpu 65C02 -O -I "$SDK/include" -C "$SDK/cfg/app-c.cfg" -o build/desk/desk.bin tools/desk/desk.c \
 	"$SDK/lib/veranda.lib" || fail "the test desktop"
 $PY "$SDK/tools/vpack.py" --load 0x0801 -o build/desk/SHELL.cvt tools/desk/desk.hdr build/desk/desk.bin >/dev/null
+# (W68) the stand-in for Veranda Ask (AI help's gate: no network, no key)
+cl65 -t none --cpu 65C02 -O -I "$SDK/include" -C "$SDK/cfg/app-c.cfg" -o build/desk/askfake.bin tools/askfake/askfake.c \
+	"$SDK/lib/veranda.lib" || fail "the stand-in for Veranda Ask"
+$PY "$SDK/tools/vpack.py" --load 0x0801 -o "build/desk/Veranda Ask.cvt" tools/askfake/askfake.hdr build/desk/askfake.bin >/dev/null
 
 # the session on the host folder (W56: without the dictionaries, NODICT:
 # its Polish screenshot is compared with the font's drawing, which has no
@@ -265,6 +274,36 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 	ok "the same on an SD card image under R49"
 	unset SESSION RAM
 fi
+# (W71) opening timed: LibreOffice's .docx from HTML (tests/office: the
+# Veranda Desktop Guide, Writing and Asking on Veranda, the Guide as
+# .odt), Report.docx, Notes.odt, the big .docx, tools/oxstress.py's
+# Stress.docx and the Guide deflated with fixed codes and in stored
+# blocks, the Guide exported both ways (tools/script.py's session_oxspeed:
+# SESSION=oxspeed) on a host folder and on an SD card image under R49 at
+# 512 KB: each state and note against the host's conversion, the times
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=oxspeed RAM=512
+	TIMEOUT=900 tools/run.sh "$OUT/oxspeed" "" "$R49" > /dev/null || fail "the oxspeed session (host folder)"
+	echo "== opening timed (host folder, R49, 512 KB)"
+	chk "$OUT/oxspeed" || fail "the oxspeed session (host folder)"
+	ok "the user's kind of .docx and the stress fixtures opened as the host converts them, timed"
+	S=$OUT/sdoxspeed
+	tools/run.sh "$S/card" "" "$R49" --prepare > /dev/null || fail "the SD card's files (oxspeed)"
+	mkdir -p "$S/out/DOCUMENTS"
+	cp "$S/card/expect.json" "$S/out/"
+	$PY "$SDK/tools/vcard.py" make --mb 64 "$S/sd.img" "$S/card" >/dev/null || fail "vcard make"
+	cp "$SDK/bin/VERANDA.PRG" "$S/"
+	(cd "$S" && SDL_VIDEODRIVER=dummy timeout -s INT 900 "$EMU" -rom "$R49" -sdcard sd.img -prg VERANDA.PRG \
+		-run -warp -sound none -echo -dump V -ram 512 > out/console.txt 2>&1) || true
+	[ -f "$S/dump.bin" ] || { tail -c 300 "$S/out/console.txt"; fail "SD card, oxspeed: the session did not finish"; }
+	for f in "DOCUMENTS/Veranda Desktop Guide.docx" "DOCUMENTS/Veranda Desktop Guide.odt"; do
+		$PY "$SDK/tools/vcard.py" get "$S/sd.img" "$f" "$S/out/$f" >/dev/null || fail "SD card, oxspeed: no $f"
+	done
+	echo "== opening timed on an SD card image (R49, 512 KB)"
+	chk "$S/out" || fail "the oxspeed session (SD card, R49)"
+	ok "the same on an SD card image under R49"
+	unset SESSION RAM
+fi
 # the partial redraw against a full one (W55; tools/script.py's
 # session_redraw: SESSION=redraw, a host folder under R49 at 512 KB): after
 # every change of the layout (paragraph styles, sizes, fonts, B I U,
@@ -333,6 +372,125 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 	ok "the same on an SD card image under R49"
 	unset SESSION RAM
 fi
+# (1.6, W62-W66) tables (tools/script.py's session_table: SESSION=table,
+# R49 at 512 KB, on a host folder and on an SD card image): Insert >
+# Table, typing, Tab, Return in a cell, rows and columns added and
+# deleted, widths, borders, undo and redo, the edges (refused), saved and
+# opened again, exported as PDF, .docx and .odt (read back: the tables);
+# each step's tables' codes and the redraw check; its screenshots. Then
+# typing in a table timed against typing in a paragraph (SESSION=tspeed)
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=table RAM=512
+	TIMEOUT=900 tools/run.sh "$OUT/table" "" "$R49" > /dev/null || fail "the table session (host folder)"
+	echo "== tables (host folder, R49, 512 KB)"
+	chk "$OUT/table" || fail "the table session (host folder)"
+	ok "tables: made, typed in, edited, undone, saved, opened, exported (PDF, .docx, .odt read back)"
+	TSHOTS="tbdlg tbtyped tbrow tbmenu tbcols tbwdlg tbwidths tbnogrid tbrefused tbopened"
+	for s in $TSHOTS; do
+		TIMEOUT=900 tools/run.sh "$OUT/tshot-$s" "$s" "$R49" > "$OUT/tshot-$s.log" 2>&1 &
+	done
+	wait
+	for s in $TSHOTS; do
+		[ -f "$OUT/tshot-$s/dump.bin" ] || { tail -3 "$OUT/tshot-$s.log"; fail "the table session stopped at $s"; }
+		$PY tools/check.py "$OUT/tshot-$s" --partial > /dev/null || fail "the table session stopped at $s: its checks"
+		$PY "$SDK/tools/vram2png.py" --color "$OUT/tshot-$s/dump.bin" "$OUT/$s.png" 2>/dev/null || true
+		cp "$OUT/$s.png" build/shots/ 2>/dev/null || true
+	done
+	ok "screenshots: $OUT/{$(echo $TSHOTS | tr ' ' ,)}.png; build/shots/"
+	S=$OUT/sdtable
+	tools/run.sh "$S/card" "" "$R49" --prepare > /dev/null || fail "the SD card's files (table)"
+	mkdir -p "$S/out/DOCUMENTS"
+	cp "$S/card/expect.json" "$S/out/"
+	$PY "$SDK/tools/vcard.py" make --mb 64 "$S/sd.img" "$S/card" >/dev/null || fail "vcard make"
+	cp "$SDK/bin/VERANDA.PRG" "$S/"
+	(cd "$S" && SDL_VIDEODRIVER=dummy timeout -s INT 900 "$EMU" -rom "$R49" -sdcard sd.img -prg VERANDA.PRG \
+		-run -warp -sound none -echo -dump V -ram 512 > out/console.txt 2>&1) || true
+	[ -f "$S/dump.bin" ] || { tail -c 300 "$S/out/console.txt"; fail "SD card, table: the session did not finish"; }
+	for f in Table.cwr DOCUMENTS/Table.pdf DOCUMENTS/Table.docx DOCUMENTS/Table.odt; do
+		$PY "$SDK/tools/vcard.py" get "$S/sd.img" "$f" "$S/out/$f" >/dev/null || fail "SD card, table: no $f"
+	done
+	echo "== tables on an SD card image (R49, 512 KB)"
+	chk "$S/out" || fail "the table session (SD card, R49)"
+	ok "the same on an SD card image under R49"
+	export SESSION=tspeed
+	TIMEOUT=900 tools/run.sh "$OUT/tspeed" "" "$R49" > /dev/null || fail "the tspeed session"
+	echo "== typing in a table against typing in a paragraph (host folder, R49, 512 KB)"
+	chk "$OUT/tspeed" || fail "the tspeed session"
+	ok "typing in tables timed"
+	unset SESSION RAM
+fi
+# (1.6, W67) templates (tools/script.py's session_templ: SESSION=templ,
+# TPLCFG=1, the clock the host's (-rtc), R49 at 512 KB, on a host folder
+# and on an SD card image): the chooser, each English template, the
+# Polish ones (the keyboard Polish), {date} today's in the template's
+# language, Save as template into /DOCUMENTS/Templates, listed as the
+# user's and opened, a blank document; Veranda's files unchanged; the
+# screenshots
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=templ RAM=512 TPLCFG=1
+	TIMEOUT=900 tools/run.sh "$OUT/templ" "" "$R49" > /dev/null || fail "the templ session (host folder)"
+	echo "== templates (host folder, R49, 512 KB)"
+	chk "$OUT/templ" || fail "the templ session (host folder)"
+	ok "templates: chosen, opened as Untitled with today's date, one saved as the user's and opened"
+	PLSHOTS="tpchoose tpletter tpcv tpreport tpmeet tpchoosepl tpraport tpsave tpmine tpcvpl"
+	for s in $PLSHOTS; do
+		TIMEOUT=900 tools/run.sh "$OUT/tpshot-$s" "$s" "$R49" > "$OUT/tpshot-$s.log" 2>&1 &
+	done
+	wait
+	for s in $PLSHOTS; do
+		[ -f "$OUT/tpshot-$s/dump.bin" ] || { tail -3 "$OUT/tpshot-$s.log"; fail "the templ session stopped at $s"; }
+		$PY tools/check.py "$OUT/tpshot-$s" --partial > /dev/null || fail "the templ session stopped at $s: its checks"
+		$PY "$SDK/tools/vram2png.py" --color "$OUT/tpshot-$s/dump.bin" "$OUT/$s.png" 2>/dev/null || true
+		cp "$OUT/$s.png" build/shots/ 2>/dev/null || true
+	done
+	ok "screenshots: $OUT/{$(echo $PLSHOTS | tr ' ' ,)}.png; build/shots/"
+	S=$OUT/sdtempl
+	tools/run.sh "$S/card" "" "$R49" --prepare > /dev/null || fail "the SD card's files (templ)"
+	mkdir -p "$S/out/DOCUMENTS/Templates" "$S/out/VERANDA/TEMPLATES/EN" "$S/out/VERANDA/TEMPLATES/PL"
+	cp "$S/card/expect.json" "$S/out/"
+	$PY "$SDK/tools/vcard.py" make --mb 64 "$S/sd.img" "$S/card" >/dev/null || fail "vcard make"
+	cp "$SDK/bin/VERANDA.PRG" "$S/"
+	(cd "$S" && SDL_VIDEODRIVER=dummy timeout -s INT 900 "$EMU" -rom "$R49" -sdcard sd.img -prg VERANDA.PRG \
+		-run -warp -sound none -echo -dump V -ram 512 -rtc > out/console.txt 2>&1) || true
+	[ -f "$S/dump.bin" ] || { tail -c 300 "$S/out/console.txt"; fail "SD card, templ: the session did not finish"; }
+	for f in "DOCUMENTS/Templates/Moj raport.cwr" VERANDA/TEMPLATES/EN/Letter.cwr VERANDA/TEMPLATES/PL/Raport.cwr; do
+		$PY "$SDK/tools/vcard.py" get "$S/sd.img" "$f" "$S/out/$f" >/dev/null || fail "SD card, templ: no $f"
+	done
+	echo "== templates on an SD card image (R49, 512 KB)"
+	chk "$S/out" || fail "the templ session (SD card, R49)"
+	ok "the same on an SD card image under R49"
+	unset SESSION RAM TPLCFG
+fi
+# (W68) AI help (tools/script.py's session_ai: SESSION=ai, R49 at 512 KB,
+# a host folder, ASKFAKE=1: tools/askfake stands in for Veranda Ask, no
+# network, no key): every action, undo, Polish, cancelled, not signed in,
+# an error, an answer that comes later or after the text changed, a cell,
+# refused selections, Tools > AI help off and on, a text too long; each
+# request's AI.IN and AI.REQ byte for byte, the redraw check; screenshots
+if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
+	export SESSION=ai RAM=512 NODICT=1 ASKFAKE=1
+	TIMEOUT=900 tools/run.sh "$OUT/ai" "" "$R49" > /dev/null || fail "the ai session"
+	echo "== AI help with a stand-in for Veranda Ask (host folder, R49, 512 KB)"
+	chk "$OUT/ai" || fail "the ai session"
+	ok "AI help: the requests as Veranda's docs/AIREQ.md, the answers put in as one undo step, the refusals, the errors"
+	ASHOTS="aimenu aiask aibefore aiafter aisummary ainosign aierror ainotyet aichanged aicell aicells aioff aitools aiabout ailong ainosignlist aibig aiaside ainostart"
+	for s in $ASHOTS; do
+		TIMEOUT=900 tools/run.sh "$OUT/ashot-$s" "$s" "$R49" > "$OUT/ashot-$s.log" 2>&1 &
+	done
+	wait
+	for s in $ASHOTS; do
+		[ -f "$OUT/ashot-$s/dump.bin" ] || { tail -3 "$OUT/ashot-$s.log"; fail "the ai session stopped at $s"; }
+		$PY tools/check.py "$OUT/ashot-$s" --partial > /dev/null || fail "the ai session stopped at $s: its checks"
+		$PY "$SDK/tools/vram2png.py" --color "$OUT/ashot-$s/dump.bin" "$OUT/$s.png" 2>/dev/null || true
+		cp "$OUT/$s.png" build/shots/ 2>/dev/null || true
+	done
+	ok "screenshots: $OUT/{$(echo $ASHOTS | tr ' ' ,)}.png; build/shots/"
+	# (W69) the not-signed-in box over a long list as over blank paper: opaque, framed
+	$PY tools/check_box.py "$SDK" "$OUT/ashot-ainosignlist/dump.bin" "$OUT/ashot-ainosign/dump.bin" 96 176 543 271 \
+		|| fail "the AI box over the page's text: not opaque"
+	ok "the AI help box opaque over a long list (its rectangle as over blank paper, its frame drawn)"
+	unset SESSION RAM NODICT ASKFAKE
+fi
 # the per-key timings (W43; tools/speed.sh: SESSION=speed, a host folder
 # under R49 at 512 KB): typing at a document's end, in a long paragraph,
 # in styles, Backspace, Return, one-line paragraphs, a 400 KB document;
@@ -379,4 +537,4 @@ if [ "${SD:-1}" != 0 ] && [ -f "$R49" ]; then
 		ok "the big document at $R KB (the original untouched, a stale swap removed)"
 	done
 fi
-echo "GATE stage 4 (.docx and .odt) + stage 3 (pages, PDF) + stage 2 + geoWrite + big documents + Polish + redraw + spelling: PASS"
+echo "GATE stage 4 (.docx and .odt) + stage 3 (pages, PDF) + stage 2 + geoWrite + big documents + Polish + redraw + spelling + tables + templates + AI help: PASS"

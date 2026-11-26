@@ -1,0 +1,28 @@
+# Szablon Veranda Write: notatka ze spotkania
+@lang pl
+@file Notatka ze spotkania
+= Notatka ze spotkania: [temat]
+**Data:** {date}     **Miejsce:** [gdzie]
+
+== Obecni
+@widths 40 40 20
+| **Imię i nazwisko** | **Funkcja** | **Obecny** |
+| [Imię i nazwisko] | [Funkcja] | [tak] |
+| [Imię i nazwisko] | [Funkcja] | [tak] |
+| [Imię i nazwisko] | [Funkcja] | [nie] |
+
+== Porządek spotkania
+* [Pierwszy punkt]
+* [Drugi punkt]
+* [Sprawy różne]
+
+== Ustalenia
+[Co powiedziano i co postanowiono.]
+
+== Zadania
+@widths 50 25 25
+| **Zadanie** | **Kto** | **Do kiedy** |
+| [Co trzeba zrobić] | [Imię i nazwisko] | [Data] |
+| [Co trzeba zrobić] | [Imię i nazwisko] | [Data] |
+
+Następne spotkanie: [data, godzina, miejsce]

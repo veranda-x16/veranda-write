@@ -124,6 +124,8 @@ unsigned int __fastcall__ e_line_x(unsigned int i, pos_t p)
 {
     lw_start = lt_start(i);
     lt_get(i, &wl);
+    if (IS_TR(&wl))
+        return tb_lx(i, p);             /* (1.6: a table's row, tbview.c) */
     return e_walk(lw_start, &wl, 0, p);
 }
 
@@ -131,6 +133,8 @@ pos_t __fastcall__ e_line_hit(unsigned int i, unsigned int x)
 {
     lw_start = lt_start(i);
     lt_get(i, &wl);
+    if (IS_TR(&wl))
+        return tb_lh(i, x);
     e_walk(lw_start, &wl, 1, x);
     return pos_norm(w_hit);
 }
@@ -141,6 +145,10 @@ void e_row_sel(unsigned char i, pos_t lo, pos_t hi)
     struct vrow *r = &vr[i];
     pos_t e = r->pos + r->l.len;
     unsigned int x0, x1;
+    if (IS_TR(&r->l)) {
+        tb_sel(i, lo, hi);              /* (1.6: a table's row, tbview.c) */
+        return;
+    }
     if (lo < r->pos)
         lo = r->pos;
     if (hi > e)

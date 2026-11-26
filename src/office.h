@@ -78,7 +78,11 @@ extern unsigned long oz_size;
 void xm_init(void);
 unsigned char xm_next(void);
 extern unsigned char xm_vlen;
-extern unsigned char xm_skipa;          /* (the reader's, after XT_START) its attributes not wanted */
+extern unsigned char xm_skipa;          /* (the reader's, after XT_START) its attributes not wanted;
+                                           (W71) 2, after XT_START or XT_OPEN: the element passed
+                                           over whole, its XT_END next */
+extern unsigned int xm_hash;            /* (W71) XNAME's hash (ohelp.c's) and length */
+extern unsigned char xm_nlen;
 /* the counts the note says (main RAM: both overlays read them) */
 struct oxcount {
     unsigned int lost;                  /* characters the set has not: '?' */

@@ -13,8 +13,13 @@
 .include "veranda.inc"
 .importzp ptr1
 
-.import _bank2, _bank4, _bank5, _bank6, _bank7, _bank8, _bank10, _bank11, _bank12, _bank13, _bank14, _bank15
-.import _bank17, _bank18, _bank19, _bank20, _bank21, _bank22
+; (the record overlays' banks, in the records' order: main.c's loop
+; loads them; 1.6's tables: 27-29, the records after 16. Then the
+; overlays v/spload.c loads from SPELL.OVL, in its order: spelling's,
+; 23-26, the office files', 17-22: W59, W66)
+.export _bank1, _bank2, _bank3, _bank4, _bank5, _bank6, _bank7, _bank8, _bank9, _bank10, _bank11
+.export _bank12, _bank13, _bank14, _bank15, _bank16, _bank27, _bank28, _bank29
+.export _bank23, _bank24, _bank25, _bank26, _bank17, _bank18, _bank19, _bank20, _bank21, _bank22, _bank31
 
 .macro FAR name, target, bank
 .export name
@@ -25,6 +30,36 @@ name:	jsr far
 .endmacro
 
 .segment "BSS"
+_bank1:	.res 1
+_bank2:	.res 1
+_bank3:	.res 1
+_bank4:	.res 1
+_bank5:	.res 1
+_bank6:	.res 1
+_bank7:	.res 1
+_bank8:	.res 1
+_bank9:	.res 1
+_bank10: .res 1
+_bank11: .res 1
+_bank12: .res 1
+_bank13: .res 1
+_bank14: .res 1
+_bank15: .res 1
+_bank16: .res 1
+_bank27: .res 1
+_bank28: .res 1
+_bank29: .res 1
+_bank23: .res 1
+_bank24: .res 1
+_bank25: .res 1
+_bank26: .res 1
+_bank17: .res 1
+_bank18: .res 1
+_bank19: .res 1
+_bank20: .res 1
+_bank21: .res 1
+_bank22: .res 1
+_bank31: .res 1                 ; (W68: AI help's, SPELL.OVL's eleventh)
 fa:	.res 1
 fx:	.res 1
 
@@ -136,8 +171,8 @@ FAR _par_find, _e_par_find, _bank13
 FAR _par_reset, _e_par_reset, _bank13
 FAR _fmt_map, _e_fmt_map, _bank13
 FAR _codes_before, _e_codes_before, _bank13
-FAR _par_start, _e_par_start, _bank13
-FAR _par_next, _e_par_next, _bank13
+FAR _par_start, _e_par_start, _bank29   ; (1.6: tabpar.c, a row's paragraphs too)
+FAR _par_next, _e_par_next, _bank29
 FAR _par_at, _e_par_at, _bank13
 FAR _style_at, _e_style_at, _bank13
 FAR _style_typing, _e_style_typing, _bank13
@@ -149,6 +184,15 @@ FAR _find_from, _e_find_from, _bank4
 FAR _find_here, _e_find_here, _bank4
 FAR _replace_all, _e_replace_all, _bank4
 FAR _doc_count, _e_doc_count, _bank4
+; overlay 5: the view (view2.c); 8, 12: the status bar, the toolbar
+; (view.c's callb wrappers until 1.6 wanted main RAM's room)
+FAR _view_all, _v_all, _bank5
+FAR _view_frame, _v_frame, _bank5
+FAR _view_refresh, _v_refresh, _bank5
+FAR _view_title, _v_title, _bank5
+FAR _view_fix_cursor, _v_fix_cursor, _bank5
+FAR _view_status, _t_status, _bank8
+FAR _view_toolbar, _t_toolbar, _bank12
 ; overlay 5: walking a line (view2.c)
 FAR _walk, _e_walk, _bank5
 FAR _line_x, _e_line_x, _bank5
@@ -219,6 +263,7 @@ FAR _v_pbreak, _e_v_pbreak, _bank14
 FAR _f_pdf_hf, _e_pdf_hf, _bank14
 FAR _pg_view, _e_pg_view, _bank13
 FAR _pdf_write, _e_pdf_write, _bank15
+FAR _plat_pdf_poll, _e_plat_pdf_poll, _bank29   ; (1.6: tbcmd.c, overlay 15's room)
 ; overlay 17: a ZIP's parts, inflated, and their tokens (ozip.c, oxml.c);
 ; 18: the text put into the document, the styles (oemit.c), the note (v/oxnote.c)
 ; (stage 4, W49-W51)
@@ -257,6 +302,7 @@ FAR _em_pstyle, _e_em_pstyle, _bank18
 FAR _em_mp, _e_em_mp, _bank18
 FAR _em_span, _e_em_span, _bank18
 FAR _em_unspan, _e_em_unspan, _bank18
+FAR _em_tbl, _e_em_tbl, _bank18          ; (1.6: a table's events)
 ; overlay 19: the .docx reader (odocx.c); 20: the .odt reader (oodt.c)
 FAR _dx_load, _e_dx_load, _bank19
 FAR _od_load, _e_od_load, _bank20
@@ -264,5 +310,19 @@ FAR _f_cs_uni, _cs_uni, _bank10         ; (the SDK's vrcs.s in overlay 10)
 ; overlay 21: the document as a .docx or an .odt (oexp.c); 22: their
 ; XML's templates (oparts.c) (stage 4, W52)
 FAR _oe_write, _e_oe_write, _bank21
+FAR _oe_poll, _e_oe_poll, _bank22      ; (1.6: overlay 21's room; W71: 18's)
 FAR _op_open, _e_op_open, _bank22
 FAR _op_next, _e_op_next, _bank22
+; (1.6, W62-W66) overlay 27: a table's row laid out and drawn (table.c,
+; v/tbview.c); word wrap's one line (overlay 4) for its cells; 28: the
+; table edits (tabedit.c)
+FAR _wrap, _e_wrap, _bank4
+FAR _tb_draw, _e_tb_draw, _bank27
+FAR _tb_cpos, _e_tb_cpos, _bank27
+FAR _tb_lx, _e_tb_lx, _bank27
+FAR _tb_lh, _e_tb_lh, _bank27
+FAR _tb_sel, _e_tb_sel, _bank27
+; overlay 28's tb_delok (clip.c's, v/tbcmd.c's)
+FAR _tb_delok, _e_tb_delok, _bank28
+FAR _f_pdf_enc, _e_pdf_enc, _bank29   ; (pdf.c's encoding text, a row's boxes: overlay 15's room)
+FAR _f_pdf_boxes, _e_pdf_boxes, _bank28

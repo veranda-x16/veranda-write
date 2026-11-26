@@ -45,7 +45,9 @@ TB_Y, TB_ALIGN, TB_LIST, TB_INDENT, TB_NAME = 32, 240, 320, 368, 416   # the too
 YES_BUTTON = (255, 271)                 # a Yes/No box's Yes (the default box, centred)
 NO_BUTTON = (319, 271)                  # a Yes/No/Cancel box's No (its middle icon)
 # the menu bar (src/v/menus.c, stage 3: Insert after Edit)
-APPM, FILEM, EDIT, INSERT, TEXT, STYLE, FORMAT, FONT, SIZE, TOOLS = range(10)
+APPM, FILEM, EDIT, INSERT, TEXT, STYLE, FORMAT, FONT, SIZE, TOOLS, TABLE = range(11)
+# the File menu's items (1.6: New from template and Save as template among them)
+F_NEW, F_NTEMPL, F_OPEN, F_SAVE, F_SAVEAS, F_STEMPL, F_PAGE, F_PDF, F_DOCX, F_ODT, F_CLOSE, F_QUIT = range(12)
 
 
 def is_head(k):
@@ -1679,7 +1681,7 @@ def session_page(run):
     s.L(2, m.state('', 3))
     s.stop('bands')
     # the page setup: Letter clicked, the top margin 5 steps (0.05 inch) more, OK clicked
-    s.menu(FILEM, 4)                            # File > Page setup...
+    s.menu(FILEM, F_PAGE)                            # File > Page setup...
     s.W(20)
     s.click(180, 320)                           # (the Letter button)
     s.W(10)
@@ -1866,8 +1868,8 @@ def session_office(run):
     s.W(30)
     s.L(1, m1.state(''))
     s.stop('oxdoc')
-    export(6, 'w', 2, m1, shot='oxsave')
-    export(7, 'v', 3, m1)
+    export(F_DOCX, 'w', 2, m1, shot='oxsave')
+    export(F_ODT, 'v', 3, m1)
     m2, d2 = model('Notes.odt')
     opn('N', 'Notes.odt', 'o', shot='oxodt')
     s.K(RET)
@@ -1876,8 +1878,8 @@ def session_office(run):
     m3, d3 = model('Big report.docx')
     opn('B', 'Big report.docx', 'b')            # (no note: nothing in it changed)
     s.L(5, m3.state(''))
-    export(6, 'x', 6, m3)
-    export(7, 'y', 7, m3)
+    export(F_DOCX, 'x', 6, m3)
+    export(F_ODT, 'y', 7, m3)
     s.stop('end')
     s.office = [{'path': 'DOCUMENTS/Report.docx', 'state': 2, 'page': d1.page},
                 {'path': 'DOCUMENTS/Report.odt', 'state': 3, 'page': d1.page},
@@ -1885,6 +1887,110 @@ def session_office(run):
                 {'path': 'DOCUMENTS/Big report.odt', 'state': 7, 'page': d3.page}]
     s.console = ['CW PDF 0', note(1, fx), note(2, fo), note(1, {})]
     return s, files
+
+
+def session_oxspeed(run):
+    """(W71, may be renumbered) opening .docx and .odt documents timed
+    (SESSION=oxspeed, under R49 at 512 KB, on a host folder and an SD card
+    image): the user's kind of document, made by LibreOffice from HTML
+    (tests/office/, made by tools/md2html.py and soffice: headings, lists,
+    tables, LibreOffice's verbose XML), "Veranda Desktop Guide.docx" (its
+    .odt as Guide.odt) and "Writing and Asking on Veranda.docx", then
+    Report.docx and Notes.odt (tools/office_fix.py's), Big report.docx
+    (600 KB of document.xml), tools/oxstress.py's Stress.docx, the Guide
+    with fixed codes and in stored blocks; the Guide exported as Word and
+    as OpenDocument. Each state and note against the host's conversion of
+    the same file; the times ("TIME c": tools/check.py) and the import's phases
+    ("CW MARK": odocx.c's, oemit.c's)"""
+    import shutil
+    import subprocess
+    import office_fix
+    s = Script()
+    ref = os.path.join('build', 'office-ref', os.path.basename(os.path.normpath(run)))
+    os.makedirs(ref, exist_ok=True)
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tests', 'office')
+    shutil.copy(os.path.join(src, 'Veranda Desktop Guide.docx'), run)
+    shutil.copy(os.path.join(src, 'Writing and Asking on Veranda.docx'), run)
+    shutil.copy(os.path.join(src, 'Veranda Desktop Guide.odt'), os.path.join(run, 'Guide.odt'))
+    office_fix.docx_features(os.path.join(run, 'Report.docx'))
+    office_fix.odt_features(os.path.join(run, 'Notes.odt'))
+    office_fix.docx_big(os.path.join(run, 'Big report.docx'), int(os.environ.get('OX_BIG', '600000')))
+    import oxstress
+    oxstress.stress(os.path.join(run, 'Stress.docx'))
+    oxstress.rezip(oxstress.GUIDE, os.path.join(run, 'Fixed codes.docx'), 'fixed')
+    oxstress.rezip(oxstress.GUIDE, os.path.join(run, 'Kept in blocks.docx'), 'stored')
+    notes = []
+
+    def model(name):
+        out = os.path.join(ref, name + '.cwr')
+        r = subprocess.run([os.environ.get('TEST_CW', 'build/host/test_cw'), 'ox', os.path.join(run, name), out],
+                           capture_output=True, text=True)
+        if r.returncode:
+            sys.exit('script.py: the host does not convert %s' % name)
+        # (the X16's note: v/oxnote.c's "CW NOTE", the host's counts)
+        import re
+        c = {k: int(v) for k, v in re.findall(r'(\w+) (\d+)', r.stdout.split(';')[-1])}
+        notes.append('CW NOTE %d %s' % (1 if name.endswith('.docx') else 2,
+                                        ' '.join('%d' % c.get(k, 0) for k in ('tables', 'pictures', 'boxes', 'notes',
+                                                                              'comments', 'changes', 'fields', 'lost'))))
+        d = cwrd.read(out)
+        m = Model(d.chars(), d.paras())
+        m.mod = True
+        return m, d
+
+    def opn(letter, t, n, name, discard=True, box=False):
+        m, d = model(name)
+        s.K(ord('o'), CTRL)
+        s.W(40)
+        if discard:
+            s.click(*NO_BUTTON)
+            s.W(40)
+        s.K(ord(letter))
+        s.W(10)
+        s.Z()
+        s.K(RET)
+        s.W(60)
+        s.Y(t)
+        if box:
+            s.K(RET)                            # (the note's box: OK)
+            s.W(30)
+        s.L(n, m.state(''))
+        return m, d
+
+    def export(item, t, n, m):
+        s.menu(FILEM, item)
+        s.W(40)
+        s.Z()
+        s.K(RET)
+        s.W(60)
+        s.Y(t)
+        s.L(n, m.state(''))
+    s.W(90)
+    one = os.environ.get('OXONLY')              # (a profile: only that file opened, then the end)
+    if one:
+        name = {'V': 'Veranda Desktop Guide.docx', 'W': 'Writing and Asking on Veranda.docx', 'G': 'Guide.odt',
+                'R': 'Report.docx', 'N': 'Notes.odt', 'B': 'Big report.docx', 'S': 'Stress.docx',
+                'F': 'Fixed codes.docx', 'K': 'Kept in blocks.docx'}[one]
+        opn(one, 'P', 1, name, discard=False, box=one in 'RN')
+        s.stop('end')
+        s.console = []
+        return s, {}
+    opn('W', 'A', 1, 'Writing and Asking on Veranda.docx', discard=False)
+    opn('G', 'O', 2, 'Guide.odt')
+    opn('R', 'd', 3, 'Report.docx', box=True)
+    opn('N', 'o', 4, 'Notes.odt', box=True)
+    opn('B', 'b', 5, 'Big report.docx')
+    opn('S', 'S', 6, 'Stress.docx', box=True)
+    opn('F', 'F', 7, 'Fixed codes.docx')
+    opn('K', 'K', 8, 'Kept in blocks.docx')
+    mg, dg = opn('V', 'G', 9, 'Veranda Desktop Guide.docx')
+    export(F_DOCX, 'X', 10, mg)
+    export(F_ODT, 'Q', 11, mg)
+    s.stop('end')
+    s.office = [{'path': 'DOCUMENTS/Veranda Desktop Guide.docx', 'state': 10, 'page': dg.page},
+                {'path': 'DOCUMENTS/Veranda Desktop Guide.odt', 'state': 11, 'page': dg.page}]
+    s.console = ['CW PDF 0'] + notes
+    return s, {}
 
 
 def session_redraw(run):
@@ -2036,7 +2142,7 @@ def session_redraw(run):
     # the page setup: the left margin 2 cm more, then back (every line wrapped again)
     s.K(CTRL_HOME, CTRL)
     for d in (KEY_RIGHT, KEY_LEFT):
-        s.menu(FILEM, 4)
+        s.menu(FILEM, F_PAGE)
         s.W(20)
         s.K(KEY_DOWN)
         s.K(KEY_DOWN)
@@ -2075,6 +2181,1143 @@ def session_redraw(run):
     return s, {}
 
 
+class TModel(Model):
+    """(1.6, W62-W66) Model with tables: each paragraph's table code (t:
+    None, ('R', flags, width) a row's first, ('C', width) a cell's first,
+    ('P', 0) a cell's further paragraph) and the table edits as
+    tabedit.c makes them"""
+
+    def __init__(self, *a):
+        Model.__init__(self, *a)
+        self.t = [None] * len(self.p)
+
+    def snap(self):
+        self.hist.append((list(self.c), self.cur, self.anc, list(self.p), list(self.t)))
+        self.redo = []
+
+    def undo(self):
+        self.redo.append((list(self.c), self.cur, self.anc, list(self.p), list(self.t)))
+        self.c, self.cur, self.anc, self.p, self.t = self.hist.pop()
+        self.mod = True
+        self.moved()
+
+    def do_redo(self):
+        self.hist.append((list(self.c), self.cur, self.anc, list(self.p), list(self.t)))
+        self.c, self.cur, self.anc, self.p, self.t = self.redo.pop()
+        self.mod = True
+
+    def par_start(self, q):
+        return self.par_range(q)[0]
+
+    def rows(self):
+        """the rows: (first paragraph, end paragraph)"""
+        out, q = [], 0
+        while q < len(self.t):
+            if self.t[q] and self.t[q][0] == 'R':
+                e = q + 1
+                while e < len(self.t) and self.t[e] and self.t[e][0] in 'CP':
+                    e += 1
+                out.append((q, e))
+                q = e
+            else:
+                q += 1
+        return out
+
+    def row_of(self, q):
+        for r in self.rows():
+            if r[0] <= q < r[1]:
+                return r
+        return None
+
+    def cells(self, r):
+        """a row's cells: their first paragraphs (the row's end last)"""
+        return [q for q in range(*r) if self.t[q][0] in 'RC'] + [r[1]]
+
+    def table_of(self, q):
+        rs = self.rows()
+        k = next(i for i, r in enumerate(rs) if r[0] <= q < r[1])
+        a = k
+        while a and rs[a - 1][1] == rs[a][0]:
+            a -= 1
+        b = k
+        while b + 1 < len(rs) and rs[b][1] == rs[b + 1][0]:
+            b += 1
+        return rs[a:b + 1]
+
+    def width(self, q):
+        return self.t[q][2] if self.t[q][0] == 'R' else self.t[q][1]
+
+    def set_width(self, q, w):
+        self.t[q] = ('R', self.t[q][1], w) if self.t[q][0] == 'R' else ('C', w)
+
+    def style_before(self, a):
+        return self.c[a - 1][1:] if a else (SANS, 12, 0)
+
+    def ins_pars(self, q, codes):
+        """empty paragraphs (their CRs in the style before) before paragraph q"""
+        a = self.par_start(q) if q < len(self.p) else len(self.c)
+        st = self.style_before(a)
+        for k, code in enumerate(codes):
+            self.c.insert(a + k, (cwrd.CR,) + st)
+            self.p.insert(q + k, BODY)
+            self.t.insert(q + k, code)
+        return a
+
+    def del_pars(self, q0, q1):
+        a = self.par_start(q0)
+        b = self.par_start(q1) if q1 < len(self.p) else len(self.c)
+        del self.c[a:b]
+        del self.p[q0:q1]
+        del self.t[q0:q1]
+        return a
+
+    def cell_at(self):
+        q = self.par_of(self.cur)
+        r = self.row_of(q)
+        cs = self.cells(r)
+        k = max(i for i in range(len(cs) - 1) if cs[i] <= q)
+        return r, cs, k
+
+    def go_cell(self, r, k):
+        self.move(self.par_start(self.cells(r)[k]))
+
+    def insert(self, cols, rows):
+        self.snap()
+        a = self.cur
+        q = self.par_of(a)
+        if a != self.par_start(q):
+            self.ty = self.typing_style(a)
+            self.type('\r', step=False)
+            q += 1
+        w = [min(255, 256 // cols + (k < 256 % cols)) for k in range(cols)]
+        codes = [('R', 0, w[k]) if not k else ('C', w[k]) for _ in range(rows) for k in range(cols)]
+        a = self.ins_pars(q, codes)
+        self.move(a)
+        self.mod = True
+
+    def tab(self, fwd=True):
+        r, cs, k = self.cell_at()
+        rs = self.rows()
+        i = rs.index(r)
+        if fwd:
+            if k + 1 < len(cs) - 1:
+                return self.go_cell(r, k + 1)
+            if i + 1 < len(rs) and rs[i + 1][0] == r[1]:
+                return self.go_cell(rs[i + 1], 0)
+            self.add_row(True)
+            return
+        if k:
+            return self.go_cell(r, k - 1)
+        if i and rs[i - 1][1] == r[0]:
+            self.go_cell(rs[i - 1], len(self.cells(rs[i - 1])) - 2)
+
+    def ret(self):
+        self.snap()
+        q = self.par_of(self.cur)
+        self.type('\r', step=False)
+        self.t[q + 1] = ('P', 0)
+        self.mod = True
+
+    def type(self, s, step=True):
+        for i, ch in enumerate(s):
+            a, b = self.sel()
+            if a != b:
+                q = self.par_of(a)
+                m = sum(1 for x in self.c[a:b] if x[0] == cwrd.CR)
+                del self.t[q + 1:q + 1 + m]
+            n = len(self.p)
+            q = self.par_of(a)
+            Model.type(self, ch, step and not i)
+            if len(self.p) > n:
+                self.t.insert(q + 1, None)
+
+    def add_row(self, below):
+        self.snap()
+        r, cs, k = self.cell_at()
+        f = self.t[r[0]][1]
+        codes = [('R', f, self.width(q)) if not i else ('C', self.width(q)) for i, q in enumerate(cs[:-1])]
+        a = self.ins_pars(r[1] if below else r[0], codes)
+        self.move(a)
+        self.mod = True
+
+    def add_col(self, right):
+        r0, cs0, kc = self.cell_at()
+        rows = self.table_of(r0[0])
+        if any(len(self.cells(r)) - 1 >= 8 for r in rows):
+            return
+        self.snap()
+        ri = self.rows().index(r0)
+        for r in reversed(rows):
+            cs = self.cells(r)
+            n = len(cs) - 1
+            k = min(kc, n - 1)
+            w = max(1, self.width(cs[k]) >> 1)
+            self.set_width(cs[k], max(1, self.width(cs[k]) - w))
+            if not right and not k:
+                f = self.t[cs[0]][1]
+                self.t[cs[0]] = ('C', self.width(cs[0]))
+                self.ins_pars(cs[0], [('R', f, w)])
+            else:
+                self.ins_pars(cs[k + right], [('C', w)])
+        self.go_cell(self.rows()[ri], kc + 1 if right else kc)
+        self.mod = True
+
+    def del_row(self):
+        r, cs, k = self.cell_at()
+        if len(self.table_of(r[0])) == 1:
+            return self.del_table()
+        self.snap()
+        self.move(self.del_pars(*r))
+        self.mod = True
+
+    def del_col(self):
+        r0, cs0, kc = self.cell_at()
+        rows = self.table_of(r0[0])
+        if max(len(self.cells(r)) - 1 for r in rows) < 2:
+            return self.del_table()
+        self.snap()
+        ri = self.rows().index(r0)
+        for r in reversed(rows):
+            cs = self.cells(r)
+            if kc >= len(cs) - 1 or len(cs) - 1 < 2:
+                continue
+            k = kc - 1 if kc else 1
+            self.set_width(cs[k], min(255, self.width(cs[k]) + self.width(cs[kc])))
+            if not kc:
+                self.t[cs[1]] = ('R', self.t[cs[0]][1], self.width(cs[1]))
+            self.del_pars(cs[kc], cs[kc + 1])
+        r = self.rows()[ri]
+        self.go_cell(r, min(kc, len(self.cells(r)) - 2))
+        self.mod = True
+
+    def del_table(self):
+        self.snap()
+        rows = self.table_of(self.par_of(self.cur))
+        self.move(self.del_pars(rows[0][0], rows[-1][1]))
+        self.mod = True
+
+    def widths(self, ws):
+        self.snap()
+        for r in self.table_of(self.par_of(self.cur)):
+            for k, q in enumerate(self.cells(r)[:-1][:len(ws)]):
+                self.set_width(q, ws[k] or 1)
+        self.mod = True
+
+    def grid(self, on):
+        self.snap()
+        for r in self.table_of(self.par_of(self.cur)):
+            f = self.t[r[0]][1]
+            self.t[r[0]] = ('R', f & ~1 if on else f | 1, self.t[r[0]][2])
+        self.mod = True
+
+    def tcodes(self):
+        out = []
+        for n, t in enumerate(self.t):
+            if not t:
+                continue
+            if t[0] == 'R':
+                out += [(n, cwrd.K_TROW, t[1]), (n, cwrd.K_TCELL, t[2])]
+            else:
+                out.append((n, cwrd.K_TCELL if t[0] == 'C' else cwrd.K_TPARA, t[1]))
+        return out
+
+    def tstate(self):
+        return list(cwrd.tab_sum(self.tcodes()))
+
+
+def session_table(run):
+    """(1.6, W62-W66) tables (SESSION=table, under R49 at 512 KB): Insert
+    > Table (its box), typed in, Tab and Shift+Tab, a cell's text
+    wrapped, bold in a cell, Return in a cell, Tab in the last cell (a
+    row more), the Table menu's rows and columns added and deleted,
+    column widths (the box), equal widths, the borders off and on, undo
+    and redo; Backspace after the table (into its last cell), Delete at a
+    cell's end and Backspace at a cell's start (nothing), a selection over
+    two cells typed over (refused), Tab out of it; saved (CWRD 1.6) and
+    opened again; exported as PDF, Word and OpenDocument (their tables
+    read back on the host). After each step its state (characters,
+    styles, paragraphs), its tables' codes ("CW TABLE") and the redraw
+    check (W55: the text area as the edits drew it against a full
+    drawing)"""
+    s = Script()
+    s.W(90)
+    m = TModel()
+    n = [0, 0]
+    s.redraws = []
+    s.tables = []
+
+    def V(shot=None):
+        n[1] += 1
+        if shot:
+            s.stop(shot)
+        s.L(0x80 | n[1], None)
+        s.states.pop()
+        s.redraws.append(n[1])
+
+    def st(shot=None, name=''):
+        n[0] += 1
+        s.L(n[0], m.state(name))
+        s.b += bytes([ord('L'), 0x78])
+        s.W(20)
+        s.tables.append([len(s.tables) + 1] + m.tstate())
+        V(shot)
+
+    def typ(t):
+        s.T(t.encode('iso8859_16'))
+        m.type(t.encode('iso8859_16').decode('latin-1'))
+
+    def tmenu(item, shot=None):
+        s.menu(TABLE, item, shot=shot)
+        s.W(30)
+    typ('Tables in Veranda Write.\r')
+    s.menu(INSERT, 3)                           # Insert > Table... (its box: 3 x 3)
+    s.W(30)
+    s.stop('tbdlg')
+    for _ in range(5):
+        s.K(BS)
+    s.T(b'4 x 2')                               # 4 columns, 2 rows
+    s.K(RET)
+    s.W(30)
+    m.insert(4, 2)
+    st()
+    typ('Name')
+    s.K(TAB)
+    m.tab()
+    typ('A longer text that wraps in its narrow cell, three lines or more of it.')
+    s.K(TAB)
+    m.tab()
+    s.K(ord('b'), CTRL)                         # bold in a cell
+    m.toggle(1)
+    typ('Bold')
+    s.K(ord('b'), CTRL)
+    m.toggle(1)
+    typ('.')
+    s.K(TAB)
+    m.tab()
+    typ('Zażółć')
+    st('tbtyped')
+    s.K(RET)                                    # Return in a cell: a further paragraph of it
+    m.ret()
+    typ('gęślą jaźń')
+    st()
+    s.K(TAB)                                    # the next row's first cell
+    m.tab()
+    typ('Row two')
+    s.M(SHIFT)                                  # Shift+Tab: back to the first row's last cell
+    s.K(TAB)
+    s.M(0)
+    m.tab(False)
+    typ('!')
+    st()
+    for _ in range(5):                          # Tab to the last cell, Tab: a row more
+        s.K(TAB)
+        m.tab()
+    s.K(TAB)
+    m.tab()
+    typ('Row three')
+    st('tbrow')
+    tmenu(1)                                    # Insert row above
+    m.add_row(False)
+    typ('Above')
+    st()
+    tmenu(2)                                    # Insert row below
+    m.add_row(True)
+    typ('Below')
+    st()
+    tmenu(4)                                    # Insert column right
+    m.add_col(True)
+    typ('Right')
+    st()
+    tmenu(3, shot='tbmenu')                     # Insert column left (the menu open: a screenshot)
+    m.add_col(False)
+    typ('Left')
+    st('tbcols')
+    tmenu(6)                                    # Delete column (the one just made)
+    m.del_col()
+    st()
+    tmenu(5)                                    # Delete row
+    m.del_row()
+    st()
+    tmenu(8)                                    # Column widths: 15 40 20 15
+    s.stop('tbwdlg')
+    for _ in range(16):
+        s.K(BS)
+    s.T(b'15 40 20 15')                         # (5 columns: the last shares what is left)
+    s.K(RET)
+    s.W(30)
+    w = [(v * 256 + 50) // 100 for v in (15, 40, 20, 15)]
+    m.widths(w + [256 - sum(w)])
+    st('tbwidths')
+    tmenu(10)                                   # Borders off
+    m.grid(False)
+    st('tbnogrid')
+    tmenu(10)                                   # and on
+    m.grid(True)
+    st()
+    tmenu(9)                                    # Equal column widths
+    nc = len(m.cell_at()[1]) - 1
+    m.widths([min(255, 256 // nc + (k < 256 % nc)) for k in range(nc)])
+    st()
+    s.K(ord('z'), CTRL)                         # undone, undone, redone
+    m.undo()
+    st()
+    s.K(ord('z'), CTRL)
+    m.undo()
+    st()
+    s.K(ord('y'), CTRL)
+    m.do_redo()
+    st()
+    # the edges: Backspace after the table goes into its last cell,
+    # Delete at a cell's end does nothing, Backspace at a cell's start
+    # does nothing, a selection over two cells is refused
+    s.K(CTRL_END, CTRL)
+    m.move(len(m.c))
+    s.K(BS)
+    m.move(len(m.c) - 1)                        # (the last cell's end)
+    s.K(DEL)
+    typ('E')
+    st()
+    s.M(SHIFT)                                  # Shift+Tab: the cell before, at its start
+    s.K(TAB)
+    s.M(0)
+    m.tab(False)
+    s.K(BS)
+    typ('<')
+    st()
+    s.K(KEY_LEFT, SHIFT)                        # (the cursor before '<': over the cell's start)
+    s.K(KEY_LEFT, SHIFT)
+    s.T(b'x')                                   # refused
+    s.W(20)
+    st('tbrefused')
+    s.K(TAB)                                    # Tab: from the cell before, into this one again
+    m.move(m.cur - 1)
+    typ('>')
+    st()
+    # saved (CWRD 1.6) and opened again
+    s.K(ord('s'), CTRL | SHIFT)
+    s.W(40)
+    for _ in range(len('Untitled.cwr')):
+        s.K(BS)
+    s.T(b'Table.cwr')
+    s.K(RET)
+    s.W(40)
+    m.mod = False
+    st(name='Table.cwr')
+    files = {'Table.cwr': (list(m.c), list(m.p))}
+    s.tfiles = {'Table.cwr': m.tstate()}
+    s.K(ord('n'), CTRL)
+    s.W(20)
+    s.K(ord('o'), CTRL)
+    s.W(40)
+    s.K(ord('T'))
+    s.W(10)
+    s.K(RET)
+    s.W(60)
+    st('tbopened', name='Table.cwr')
+    # exported as PDF, Word and OpenDocument
+    s.menu(FILEM, F_PDF)
+    s.W(40)
+    s.K(RET)
+    s.W(60)
+    st(name='Table.cwr')
+    s.pdfs = [{'path': 'DOCUMENTS/Table.pdf', 'pages': 1,
+               'on': [[1, 'Tables in Veranda Write.'], [1, 'Name'], [1, 'Row three'], [1, 'Bold.']]}]
+    s.office = []
+    for item, ext in ((F_DOCX, 'docx'), (F_ODT, 'odt')):
+        s.menu(FILEM, item)
+        s.W(40)
+        s.Z()
+        s.K(RET)
+        s.W(60)
+        s.Y(ext[0])
+        st('tb' + ext, name='Table.cwr')
+        s.office.append({'path': 'DOCUMENTS/Table.' + ext, 'state': n[0]})
+        s.tfiles['DOCUMENTS/Table.%s.cwr' % ext] = m.tstate()      # (check.py's read-back)
+    s.title = 'tables'
+    s.m = m
+    return s, files
+
+
+def session_tspeed(run):
+    """(1.6, W63) typing in a table against typing in a paragraph
+    (SESSION=tspeed, under R49 at 512 KB; tools/speed.sh's 'Q' keys):
+    Grid.cwr, a paragraph and a table of 10 rows by 5 columns, typed in
+    at the paragraph's end and in a cell in the table's middle; Hundred.cwr,
+    a table of 100 rows by 3 columns, typed in in its 50th row. Each key's
+    time from the ROM's queue to the drawing after it ("CW LAT"); the
+    states (no key lost)"""
+    s = Script()
+    s.labels = {}
+    n = [0]
+
+    def doc(rows, cols, mark_rc, mark, intro):
+        chars, paras, t = [], [], []
+
+        def par(text, code=None):
+            if paras:
+                chars.append((cwrd.CR, SANS, 12, 0))
+            paras.append(BODY)
+            t.append(code)
+            chars.extend((ord(ch), SANS, 12, 0) for ch in text)
+        par(intro)
+        w = [256 // cols + (k < 256 % cols) for k in range(cols)]
+        for r in range(rows):
+            for c in range(cols):
+                text = mark if (r, c) == mark_rc else 'Row %d, cell %d' % (r + 1, c + 1)
+                par(text, ('R', 0, w[0]) if not c else ('C', w[c]))
+        par('')
+        return chars, paras, t
+
+    def opn(letter, name, d):
+        cwrd.write(os.path.join(run, name), d[0], paras=d[1], minor=6, tcodes=d[2])
+        m = TModel(list(d[0]), list(d[1]))
+        m.t = [(x[0], 0) if x and x[0] == 'P' else x for x in d[2]]
+        s.K(ord('o'), CTRL)
+        s.W(40)
+        s.K(ord(letter))
+        s.W(10)
+        s.K(RET)
+        s.W(60)
+        return m
+
+    def state(m, name, label=None):
+        n[0] += 1
+        st = m.state(name)
+        st['cur_in'] = 1
+        s.L(n[0], st)
+        if label:
+            s.labels[n[0]] = label
+
+    def find(word, m):
+        s.K(CTRL_HOME, CTRL)
+        s.K(ord('f'), CTRL)
+        s.T(word.encode())
+        s.K(RET)
+        s.W(20)
+        s.K(ESC)
+        s.K(KEY_RIGHT)
+        t = ''.join(chr(ch[0]) for ch in m.c)
+        m.move(t.index(word) + len(word))
+
+    def q(t, m):
+        for ch in t:
+            s.b += bytes([ord('Q'), ord(ch)])
+            m.type(ch)
+        s.W(10)
+    s.W(90)
+    g = doc(10, 5, (4, 2), 'CELLMARK in a cell', 'A paragraph before the table, PARAMARK, and its text.')
+    m = opn('G', 'Grid.cwr', g)
+    state(m, 'Grid.cwr')
+    find('PARAMARK', m)
+    q(' typed in', m)
+    state(m, 'Grid.cwr', 'typing in a paragraph (Grid.cwr)')
+    find('CELLMARK', m)
+    q(' typed in', m)
+    state(m, 'Grid.cwr', 'typing in a cell of a table of 10 rows by 5 columns')
+    s.K(ord('s'), CTRL)                         # (saved: the Open after it asks nothing)
+    s.W(40)
+    h = doc(100, 3, (49, 1), 'ROWMARK in a cell', 'A table of a hundred rows.')
+    m = opn('H', 'Hundred.cwr', h)
+    state(m, 'Hundred.cwr')
+    find('ROWMARK', m)
+    q(' typed in', m)
+    state(m, 'Hundred.cwr', 'typing in a cell in the 50th row of a table of 100 rows')
+    s.title = 'tspeed'
+    return s, {}
+
+
+def session_templ(run):
+    """(1.6, W67) templates (SESSION=templ, TPLCFG=1: the documents'
+    language the keyboard's; under R49 at 512 KB): File > New from
+    template, the chooser (Veranda's English templates, a blank
+    document); each template opened as Untitled, {date} today's; the
+    keyboard made Polish ('L' $7A): the Polish ones, the date in Polish;
+    one edited and saved by File > Save as template into
+    /DOCUMENTS/Templates, listed as the user's and opened from there;
+    the blank document. Each state against the template's file (its
+    {date} today's); the shipped files unchanged"""
+    import datetime
+    s = Script()
+    files = {}
+    s.W(90)
+    t = datetime.date.today()
+    en = '%d %s %d' % (t.day, t.strftime('%B'), t.year)
+    plm = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września',
+           'października', 'listopada', 'grudnia']
+    pl = '%d %s %d' % (t.day, plm[t.month - 1], t.year)
+    n = [0]
+
+    def tmodel(lang, name, date):
+        d = cwrd.read(os.path.join('build', 'veranda', 'TEMPLATES', lang, name + '.cwr'))
+        ch = d.chars()
+        key = [ord(x) for x in '{date}']
+        out, i = [], 0
+        while i < len(ch):
+            if [c[0] for c in ch[i:i + 6]] == key:
+                out += [(b,) + ch[i][1:] for b in date.encode('iso8859_16')]
+                i += 6
+            else:
+                out.append(ch[i])
+                i += 1
+        return Model(out, d.paras())
+
+    def choose(k, shot=None):
+        s.menu(FILEM, F_NTEMPL)                 # File > New from template...
+        s.W(40)
+        if shot:
+            s.stop(shot)
+        for _ in range(k):
+            s.K(KEY_DOWN)
+        s.K(RET)
+        s.W(90)
+
+    def st(m, name='', shot=None):
+        n[0] += 1
+        s.L(n[0], m.state(name))
+        if shot:
+            s.stop(shot)
+    # the English templates (the chooser: Blank, CV, Letter, Meeting notes, Report)
+    if os.environ.get('TPL_FIRST'):
+        choose(int(os.environ['TPL_FIRST']))
+        s.stop('tpfirst')
+    choose(2, shot='tpchoose')
+    m = tmodel('EN', 'Letter', en)
+    m.mod = False
+    st(m, shot='tpletter')
+    choose(1)
+    m = tmodel('EN', 'CV', en)
+    m.mod = False
+    st(m, shot='tpcv')
+    choose(4)
+    m = tmodel('EN', 'Report', en)
+    m.mod = False
+    st(m, shot='tpreport')
+    choose(3)
+    m = tmodel('EN', 'Meeting notes', en)
+    m.mod = False
+    st(m, shot='tpmeet')
+    # the Polish ones (the keyboard Polish; Blank, CV, List, Notatka ze spotkania, Raport)
+    s.b += bytes([ord('L'), 0x7A])
+    s.W(20)
+    choose(4, shot='tpchoosepl')
+    m = tmodel('PL', 'Raport', pl)
+    m.mod = False
+    st(m, shot='tpraport')
+    # typed in, saved as a template of the user's
+    s.K(CTRL_END, CTRL)
+    s.T(b' Dodatek.')
+    m.move(len(m.c))
+    m.type(' Dodatek.')
+    st(m)
+    s.menu(FILEM, F_STEMPL)                     # File > Save as template...
+    s.W(40)
+    for _ in range(len('Untitled.cwr')):
+        s.K(BS)
+    s.T(b'Moj raport.cwr')
+    s.stop('tpsave')
+    s.K(RET)
+    s.W(60)
+    m.mod = False
+    st(m, 'Moj raport.cwr')
+    files['DOCUMENTS/Templates/Moj raport.cwr'] = (list(m.c), list(m.p))
+    # listed as the user's, opened from there (as Untitled)
+    choose(5, shot='tpmine')
+    m.mod = False
+    st(m)
+    choose(1)                                   # the Polish CV
+    m = tmodel('PL', 'Curriculum vitae', pl)
+    m.mod = False
+    st(m, shot='tpcvpl')
+    choose(0)                                   # a blank document
+    st(Model())
+    s.b += bytes([ord('L'), 0x7A])              # (the keyboard as it was)
+    s.W(20)
+    for lang, name in (('EN', 'Letter'), ('PL', 'Raport')):
+        files['VERANDA/TEMPLATES/%s/%s.cwr' % (lang, name)] = {
+            'raw': open(os.path.join('build', 'veranda', 'TEMPLATES', lang, name + '.cwr'), 'rb').read()}
+    return s, files
+
+AI = 11                                     # (W68) the bar's AI menu (src/v/menus.c)
+AI_REWRITE, AI_SHORTEN, AI_GRAMMAR, AI_TO_EN, AI_TO_PL, AI_SUMMARY, AI_ASK, AI_CHECK, AI_ABOUT = range(9)
+AI_ACTS = ['rewrite', 'shorten', 'grammar', 'translate-en', 'translate-pl', 'summarise', 'ask']
+T_AIHELP = 7                                # (Tools > AI help: on, off)
+
+
+def ai_pars(ans):
+    """an answer's paragraphs as v/aiui.c puts them in (src/ai.c): CR,
+    LF and CR LF end one, a run of them one, those at the ends left out;
+    the characters the text cannot hold left out"""
+    out, brk = [], False
+    for ch in ans:
+        c = ord(ch)
+        if c in (13, 10):
+            brk = bool(out)
+            continue
+        if not (c == 9 or 0x20 <= c < 0x7F or c >= 0xA0):
+            continue
+        if brk:
+            out.append('\r')
+            brk = False
+        out.append(ch)
+    return ''.join(out)
+
+
+def ai_apply(m, ans, after):
+    """(W68) the answer put in as src/ai.c does, one undo step: in place of
+    the selection (its first character's style; the paragraphs its
+    paragraph's style; in a cell the cell's), or after the paragraph of
+    the selection's end (a CR first: Body after a heading, its characters
+    12 points, not bold); the answer selected"""
+    m.snap()
+    a, b = m.sel()
+    t = ai_pars(ans.encode('iso8859_16').decode('latin-1'))
+    st = m.c[a][1:]
+    if not after:
+        q = m.par_of(a)
+        k = sum(1 for x in m.c[a:b] if x[0] == cwrd.CR)
+        del m.p[q + 1:q + 1 + k]
+        del m.t[q + 1:q + 1 + k]
+        del m.c[a:b]
+        at, ps = a, m.p[q]
+    else:
+        q = m.par_of(b - 1 if b > a else a)
+        at = m.par_range(q)[0]
+        while at < len(m.c) and m.c[at][0] != cwrd.CR:
+            at += 1
+        ps = m.p[q]
+        if is_head(ps[0]):
+            f, z, g = st
+            st, ps = (f, 12, g & ~1), BODY
+        t = '\r' + t
+    cell = m.row_of(q) is not None
+    for k, ch in enumerate(t):
+        m.c.insert(at + k, (ord(ch) if ch != '\r' else cwrd.CR,) + st)
+    n = t.count('\r')
+    for _ in range(n):
+        m.p.insert(q + 1, ps)
+        m.t.insert(q + 1, ('P', 0) if cell else None)
+    if after:
+        m.anc, m.cur = at + 1, at + len(t)
+    else:
+        m.anc, m.cur = at, at + len(t)
+    m.mod = True
+
+
+def session_ai(run):
+    """(W68) AI help (SESSION=ai, ASKFAKE=1: tools/askfake, a stand-in for
+    Veranda Ask that answers as /AIFAKE says, nothing sent anywhere; under
+    R49 at 512 KB): each action from the AI menu (Rewrite with a selection,
+    Shorten the paragraph at the cursor, grammar on a Polish paragraph,
+    Translate to English (two paragraphs back), Translate to Polish
+    cancelled, Summarise and Ask (the question's box) after the
+    paragraph), undo and redo; Veranda Ask not signed in, another error;
+    a cell's text rewritten (the cell's paragraphs), a selection over two
+    cells and the whole table refused; an answer that comes later (Veranda
+    Ask put aside: not answered yet, Check for the answer, then Alt+Tab),
+    one that comes after the text changed (not used); Tools > AI help off
+    and on; a text over 8,192 characters refused. Each request's AI.IN and
+    AI.REQ (the stand-in's copies) byte for byte; the states, the redraw
+    check after each change, no request file left"""
+    s = Script()
+    s.W(90)
+    m = TModel()
+    n = [0, 0]
+    s.redraws = []
+    s.tables = []
+    s.aifake = []
+    files = {}
+    s.console = []
+    s.absent = ['VERANDA/.SYSTEM/' + f for f in ('AI.IN', 'AI.REQ', 'AI.OUT', 'AI.RES', 'START.REQ',
+                                                  'AILATER.OUT', 'AILATER.RES')]
+    req = [0]
+
+    def V(shot=None):
+        n[1] += 1
+        if shot:
+            s.stop(shot)
+        s.L(0x80 | n[1], None)
+        s.states.pop()
+        s.redraws.append(n[1])
+
+    def st(shot=None, name=''):
+        n[0] += 1
+        s.L(n[0], m.state(name))
+        s.b += bytes([ord('L'), 0x78])
+        s.W(20)
+        s.tables.append([len(s.tables) + 1] + m.tstate())
+        V(shot)
+
+    def enc(t):
+        return t.encode('iso8859_16')
+
+    def typ(t):
+        s.T(enc(t))
+        m.type(enc(t).decode('latin-1'))
+
+    def ask(item, fake, text, question=None, shot=None, wait=300):
+        """an AI menu item: the stand-in's answer fake (its /AIFAKE line);
+        text: what AI.IN must hold (None: no request expected)"""
+        s.menu(AI, item, shot=shot)
+        if question is not None:
+            s.W(30)
+            s.stop('aiask')
+            s.T(enc(question))
+            s.K(RET)
+        if text is None:
+            s.W(60)
+            return
+        k = chr(ord('A') + req[0])
+        req[0] += 1
+        s.aifake.append(enc(fake))
+        files['AIIN.' + k] = {'raw': enc(text)}
+        r = 'AIREQ 1\r\naction %s\r\n' % AI_ACTS[item]
+        if question is not None:
+            r += 'question %s\r\n' % question
+        files['AIREQ.' + k] = {'raw': enc(r + 'back Veranda Write\r\n')}
+        W(wait)
+
+    def W(k):
+        while k > 0:
+            s.W(min(k, 250))
+            k -= 250
+
+    def para_sel():
+        """nothing selected: the paragraph at the cursor, selected (v/aiui.c)"""
+        q = m.par_of(m.cur)
+        a, b = m.par_range(q)
+        if b > a and b <= len(m.c) and m.c[b - 1][0] == cwrd.CR:
+            b -= 1
+        m.anc, m.cur = a, b
+
+    def text_of(a, b):
+        return ''.join(chr(c[0]) for c in m.c[a:b]).encode('latin-1').decode('iso8859_16')
+
+    P1 = 'Veranda Write asks for help with this sentence.'
+    P2 = 'A second paragraph, in plain words.'
+    P3 = 'Zażółć gęślą jaźń: to jest tekst po polsku.'
+    typ(P1 + '\r' + P2 + '\r' + P3)
+    st()
+    # Rewrite: the first paragraph selected (Shift+End)
+    s.K(CTRL_HOME, CTRL)
+    m.move(0)
+    s.K(END, SHIFT)
+    m.move(len(P1), True)
+    s.W(10)
+    s.stop('aibefore')
+    ans = 'Veranda Write asks Veranda Ask to make this sentence clearer.'
+    ask(AI_REWRITE, 'ok ' + ans, P1, shot='aimenu')
+    ai_apply(m, ans, False)
+    s.console.append('CW AI OK rewrite')
+    st('aiafter')
+    # undone (one step), redone
+    s.K(ord('z'), CTRL)
+    m.undo()
+    st()
+    s.K(ord('y'), CTRL)
+    m.do_redo()
+    m.anc, m.cur = 0, len(ans)
+    st()
+    # Shorten, nothing selected: the paragraph at the cursor
+    s.K(KEY_DOWN)
+    s.K(HOME)
+    m.move(m.par_range(1)[0])
+    s.W(10)
+    para_sel()
+    ans = 'A short second paragraph.'
+    ask(AI_SHORTEN, 'ok ' + ans, P2)
+    ai_apply(m, ans, False)
+    st()
+    # grammar: the Polish paragraph, Polish back
+    s.K(CTRL_END, CTRL)
+    m.move(len(m.c))
+    para_sel()
+    ans = 'Zażółć gęślą jaźń; to jest tekst po polsku!'
+    ask(AI_GRAMMAR, 'ok ' + ans, P3)
+    ai_apply(m, ans, False)
+    st()
+    # Translate to English: two paragraphs back (CR LF between, ends left out)
+    para_sel()
+    ans = 'Make the goose\'s heart yellow.|Two paragraphs: it is a text in Polish.|'
+    ask(AI_TO_EN, 'ok ' + ans, 'Zażółć gęślą jaźń; to jest tekst po polsku!')
+    ai_apply(m, ans.replace('|', '\r'), False)
+    st()
+    # Translate to Polish: cancelled in Veranda Ask, nothing changes
+    s.K(CTRL_HOME, CTRL)
+    m.move(0)
+    para_sel()
+    ask(AI_TO_PL, 'cancelled', text_of(m.anc, m.cur))
+    s.console.append('CW AI CANCELLED')
+    st()
+    # Summarise the first two paragraphs: after the second
+    s.K(CTRL_HOME, CTRL)
+    m.move(0)
+    s.K(KEY_DOWN, SHIFT)
+    s.K(END, SHIFT)
+    m.move(m.par_range(1)[1] - 1, True)
+    a, b = m.sel()
+    ans = 'A summary: Write asks, and the paragraphs are short.'
+    ask(AI_SUMMARY, 'ok ' + ans, text_of(a, b))
+    ai_apply(m, ans, True)
+    st('aisummary')
+    # Ask about this text: the question's box, the answer after the paragraph
+    s.K(CTRL_HOME, CTRL)
+    m.move(0)
+    para_sel()
+    ans = 'The tone is neutral and polite.'
+    ask(AI_ASK, 'ok ' + ans, text_of(m.anc, m.cur), question='What is the tone of it?')
+    s.console.append('CW AI QUESTION What is the tone of it?')
+    ai_apply(m, ans, True)
+    st()
+    # Veranda Ask not signed in: the box; nothing changes
+    s.K(CTRL_HOME, CTRL)
+    m.move(0)
+    para_sel()
+    ask(AI_REWRITE, 'error not-set-up Veranda Ask is not signed in. Sign in in Veranda Ask first.',
+        text_of(m.anc, m.cur))
+    s.stop('ainosign')
+    s.K(RET)
+    s.W(30)
+    s.stop('ainosign2')
+    s.console.append('CW AI NOT SET UP')
+    st()
+    # another error: its message
+    ask(AI_REWRITE, 'error bad-request The request could not be read by Veranda Ask (its format).',
+        text_of(m.anc, m.cur))
+    s.stop('aierror')
+    s.K(RET)
+    s.W(30)
+    s.console.append('CW AI error bad-request')
+    st()
+    # an answer that comes later: Veranda Ask put aside (Alt+Tab there)
+    s.K(CTRL_END, CTRL)
+    m.move(len(m.c))
+    para_sel()
+    ans = 'This line came later.'
+    ask(AI_REWRITE, 'later ' + ans, text_of(m.anc, m.cur))
+    s.stop('ainotyet')
+    s.K(RET)
+    s.W(30)
+    s.menu(AI, AI_CHECK)                        # Check for the answer: not yet
+    s.W(60)
+    s.K(RET)
+    s.W(30)
+    s.console += ['CW AI NOT YET', 'CW DESK LATER']
+    st()
+    s.K(TAB, ALT)                               # Write aside and back: the answer is there now
+    W(300)
+    ai_apply(m, ans, False)
+    st()
+    # one that comes after the text changed: not used
+    para_sel()
+    ask(AI_SHORTEN, 'later Not used.', text_of(m.anc, m.cur))
+    s.K(RET)
+    s.W(30)
+    typ('!')                                    # (over the selection: the text changed)
+    s.K(TAB, ALT)
+    W(300)
+    s.stop('aichanged')
+    s.K(RET)
+    s.W(30)
+    s.console.append('CW AI CHANGED')
+    st()
+    # a table: a cell's text rewritten (the cell's paragraphs), refused over two cells
+    s.K(CTRL_END, CTRL)
+    m.move(len(m.c))
+    typ('\r')
+    s.menu(INSERT, 3)                           # Insert > Table... (3 x 3 offered)
+    s.W(30)
+    for _ in range(5):
+        s.K(BS)
+    s.T(b'2 x 2')
+    s.K(RET)
+    s.W(30)
+    m.insert(2, 2)
+    typ('A cell with its text')
+    s.K(TAB)
+    m.tab()
+    typ('The other cell')
+    st()
+    s.M(SHIFT)                                  # Shift+Tab: the first cell, at its start
+    s.K(TAB)
+    s.M(0)
+    m.tab(False)
+    s.K(END, SHIFT)
+    m.move(m.cur + len('A cell with its text'), True)
+    ans = 'A cell|rewritten in two'
+    ask(AI_REWRITE, 'ok ' + ans, 'A cell with its text')
+    ai_apply(m, ans.replace('|', '\r'), False)
+    st('aicell')
+    s.K(TAB)                                    # the second cell; Shift+Left twice: over the cell's start
+    m.tab()
+    s.K(KEY_LEFT, SHIFT)
+    s.K(KEY_LEFT, SHIFT)
+    ask(AI_REWRITE, None, None)
+    s.stop('aicells')
+    s.K(RET)
+    s.W(30)
+    s.K(ord('a'), CTRL)                         # all of it: a table in it, refused
+    ask(AI_SUMMARY, None, None)
+    s.K(RET)
+    s.W(30)
+    s.console.append('CW AI CELLS')
+    s.K(CTRL_HOME, CTRL)
+    m.move(0)
+    st()
+    # Tools > AI help off: no AI menu; on again (WRITE.CFG)
+    s.menu(TOOLS, T_AIHELP)
+    s.W(60)
+    s.stop('aioff')
+    s.menu(TOOLS, T_AIHELP, shot='aitools')
+    s.W(60)
+    files['VERANDA/.SYSTEM/WRITE.CFG'] = {'raw': b'WCFG\x01\x00\x01'}
+    # About AI help
+    s.menu(AI, AI_ABOUT)
+    s.W(30)
+    s.stop('aiabout')
+    s.K(RET)
+    s.W(30)
+    st()
+    # a text over 8,192 characters: refused before Veranda Ask is started
+    long = ''.join('Word%04d ' % i for i in range(1000))
+    cwrd.write(os.path.join(run, 'Long.cwr'), [(ord(c), SANS, 12, 0) for c in long], minor=5)
+    s.K(ord('o'), CTRL)
+    s.W(40)
+    s.click(*NO_BUTTON)                         # (the changes: not saved)
+    s.W(40)
+    s.K(ord('L'))
+    s.W(10)
+    s.K(RET)
+    s.W(120)
+    m = TModel([(ord(c), SANS, 12, 0) for c in long])
+    s.K(ord('a'), CTRL)
+    ask(AI_REWRITE, None, None)
+    s.stop('ailong')
+    s.K(RET)
+    s.W(30)
+    s.console.append('CW AI LONG')
+    st(name='Long.cwr')
+    # (W69) the box over a long bulleted list, scrolled, an item selected:
+    # Veranda Ask not signed in (as the user saw it on an X16: the box's
+    # text over the page's when its Y fields were bytes); its rectangle as
+    # over blank paper (tools/check_box.py: ainosignlist against ainosign),
+    # then the redraw check
+    items = ['Item %02d of the desktop guide: the dock, the switcher and the card' % i for i in range(1, 61)]
+    d = [(ord(c), SANS, 12, 0) for c in '\r'.join(items)]
+    pp = [NAMED[5]] * len(items)
+    cwrd.write(os.path.join(run, 'Guide.cwr'), d, paras=pp, minor=6)
+    s.K(ord('o'), CTRL)
+    s.W(40)
+    s.K(ord('G'))
+    s.W(10)
+    s.K(RET)
+    s.W(120)
+    m = TModel(list(d), list(pp))
+    s.K(CTRL_END, CTRL)
+    for _ in range(12):
+        s.K(KEY_UP)
+    s.K(HOME)
+    m.move(m.par_range(len(items) - 13)[0])
+    para_sel()
+    ask(AI_REWRITE, 'error not-set-up Veranda Ask is not signed in. Sign in in Veranda Ask first.',
+        text_of(m.anc, m.cur))
+    s.stop('ainosignlist')
+    s.K(RET)
+    s.W(30)
+    s.console.append('CW AI NOT SET UP')
+    st(name='Guide.cwr')
+    # (W70) a long guide paged out to the card at 512 KB (AI_BIG items, a
+    # Body paragraph every 25th): an item two thirds down, the cursor in it
+    # (Find, Home), Rewrite: AI.IN exactly its text, the answer in place of
+    # exactly that item; then Find's selection there, Shorten
+    nb = int(os.environ.get('AI_BIG', '5000'))
+    pars, pp = [], []
+    for i in range(nb):
+        if i % 25 == 0:
+            pars.append('Part %04d. The desktop shows one window at a time; the dock holds the programs put aside.' % i)
+            pp.append(BODY)
+        else:
+            pars.append('Item %04d: the sidebar, the places Veranda, Apps, Documents and Mods, and the devices:'
+                        ' the SD card, the printer and the trash.' % i)
+            pp.append(NAMED[5])
+    d = [(ord(c), SANS, 12, 0) for c in '\r'.join(pars)]
+    cwrd.write(os.path.join(run, 'Desk.cwr'), d, paras=pp, minor=6)
+    s.K(ord('o'), CTRL)
+    s.W(40)
+    s.K(ord('D'))
+    s.W(10)
+    s.K(RET)
+    W(600)
+    m = TModel(list(d), list(pp))
+    st(name='Desk.cwr')
+
+    def found(pat, home=True):
+        s.K(ord('f'), CTRL)
+        for _ in range(found.n):
+            s.K(BS)
+        s.T(pat)
+        s.K(RET)
+        s.K(ESC)
+        s.W(30)
+        found.n = len(pat)
+        m.find(pat)
+        if home:
+            s.K(HOME)
+            m.move(m.anc)
+            para_sel()
+    found.n = 0
+    k = nb * 2 // 3 + 1
+    found('Item %04d:' % k)
+    ans = 'Item %04d, rewritten: the sidebar lists the places and the devices.' % k
+    ask(AI_REWRITE, 'ok ' + ans, pars[k], wait=600)
+    ai_apply(m, ans, False)
+    st('aibig', name='Desk.cwr')
+    found('Item %04d: the sidebar, the places' % (k + 2), home=False)
+    ans = 'Item %04d: the places' % (k + 2)
+    ask(AI_SHORTEN, 'ok ' + ans, text_of(m.anc, m.cur), wait=600)
+    ai_apply(m, ans, False)
+    st(name='Desk.cwr')
+    # (W70) Veranda Ask put aside with a request on its screen (Alt+Tab back
+    # to Write: not answered yet); another request then is refused (that
+    # Veranda Ask would answer the first, as seen on an X16: another
+    # document's text shown to be sent); Alt+Tab to it: its answer in place
+    # of the first request's text, not of the paragraph at the cursor
+    k += 5
+    found('Item %04d:' % k)
+    a0, b0 = m.anc, m.cur
+    ask(AI_REWRITE, 'aside', pars[k], wait=600)
+    s.K(RET)                                    # ("not answered yet")
+    s.W(30)
+    s.console += ['CW AI NOT YET', 'CW DESK RESUME WRITE']
+    found('Item %04d:' % (k + 1))
+    s.menu(AI, AI_REWRITE)
+    s.W(60)
+    s.stop('aiaside')
+    s.K(RET)
+    s.W(30)
+    s.console.append('CW AI ASK ASIDE')
+    st(name='Desk.cwr')
+    s.K(TAB, ALT)                               # to the Veranda Ask aside: it answers the first
+    W(600)
+    s.console += ['CW DESK RESUME ASK', 'ASKFAKE ASIDE BACK']
+    m.anc, m.cur = a0, b0
+    ai_apply(m, 'ANSWER TO ' + enc(pars[k])[:64].decode('latin-1'), False)
+    st(name='Desk.cwr')
+    # (W70) Veranda Ask did not start (too little memory): AI.REQ unread when
+    # Write is back: said, the request's files deleted
+    found('Item %04d:' % (k + 3))
+    s.aifake.append(b'nostart')
+    req[0] += 1
+    s.menu(AI, AI_REWRITE)
+    W(600)
+    s.stop('ainostart')
+    s.K(RET)
+    s.W(30)
+    s.console.append('CW AI NOT STARTED')
+    st(name='Desk.cwr')
+    s.stop('end')
+    return s, files
+
+
 def main():
     a = sys.argv[1:]
     if not a:
@@ -2083,7 +3326,8 @@ def main():
     stop = a[a.index('--stop') + 1] if '--stop' in a else None
     s, files = {'big': session_big, 'speed': session_speed, 'page': session_page,
                  'office': session_office, 'redraw': session_redraw, 'spell': session_spell,
-                 'nodict': session_nodict}.get(os.environ.get('SESSION'), session)(run)
+                 'nodict': session_nodict, 'table': session_table, 'templ': session_templ,
+                 'tspeed': session_tspeed, 'ai': session_ai, 'oxspeed': session_oxspeed}.get(os.environ.get('SESSION'), session)(run)
     b = bytes(s.b)
     if stop:
         b = b[:s.names[stop]]
@@ -2093,9 +3337,11 @@ def main():
     parts = [b[:sp], b[sp:]] if sp is not None and len(b) > sp else [b]
     parts[-1] += b'S'
     for name, b in zip(('CW.PLY', 'CW.PL2'), parts):
-        if len(b) > 4096:
-            sys.exit('script.py: %s is %d bytes (4096 at most: the test overlay has the rest of its bank)' % (name, len(b)))
+        if len(b) > 8192:
+            sys.exit('script.py: %s is %d bytes (8192 at most: the session\'s bank, src/v/test.c)' % (name, len(b)))
         open(os.path.join(run, name), 'wb').write(b)
+    if getattr(s, 'aifake', None) is not None:      # (W68: the stand-in for Veranda Ask's answers)
+        open(os.path.join(run, 'AIFAKE'), 'wb').write(b'\n'.join(s.aifake) + b'\n')
     def fexp(v):
         if isinstance(v, dict):
             return {'sha256': hashlib.sha256(v['raw']).hexdigest()} if 'raw' in v else v
@@ -2106,8 +3352,9 @@ def main():
                'console': getattr(s, 'console', []), 'pagestart': getattr(s, 'pagestart', None),
                'pagefile': getattr(s, 'pagefile', {}), 'office': getattr(s, 'office', []),
                'hfdate': getattr(s, 'hfdate', False), 'redraws': getattr(s, 'redraws', []),
+               'tables': getattr(s, 'tables', []), 'tfiles': getattr(s, 'tfiles', {}),
                'spell': getattr(s, 'spell', []), 'words': getattr(s, 'words', {}), 'once': getattr(s, 'once', []),
-               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page', 'office', 'redraw', 'spell', 'nodict')
+               **({'SESSION': os.environ['SESSION']} if os.environ.get('SESSION') in ('big', 'speed', 'page', 'office', 'redraw', 'spell', 'nodict', 'table', 'templ', 'tspeed', 'ai', 'oxspeed')
                   else {})},
               open(os.path.join(run, 'expect.json'), 'w'), indent=1)
 

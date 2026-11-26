@@ -7,7 +7,8 @@ X16's main memory, its own file format. A sibling of Veranda Calc.
 
 This is **stage 4** of the plan below (Word and OpenDocument documents
 opened and exported), with stage 3's pages, headers and footers and PDF,
-and **geoWrite documents** opened (converted). MIT licence, Copyright (c)
+**geoWrite documents** opened (converted), and since 1.6 **tables** and
+**templates**. MIT licence, Copyright (c)
 2026 Marcin Spoczynski.
 
 It was called **Commander Write** until Veranda 0.9.0 (DECISIONS W40).
@@ -17,6 +18,74 @@ still `CmdrWrite`, so documents made before open as they did.
 
 ## Features (stages 1 to 4)
 
+- **Tables** (1.6, W62-W66): **Insert > Table...** asks for the columns
+  and rows ("3 x 3"; 8 columns at most) and puts the table at the
+  cursor. Each cell holds text in any styles and paragraphs of its own
+  (Return in a cell starts a new paragraph in it; each has its own
+  alignment and can be a list); the text wraps inside the cell and a
+  row is as tall as its tallest cell. Tab goes to the next cell (in the
+  last one it adds a row), Shift+Tab to the one before; the arrows,
+  Home and End move by the cell's lines. The **Table** menu inserts rows
+  above and below and columns left and right, deletes the row, the
+  column or the table, sets the column widths (in per cent, "25 50 25";
+  columns not given share what is left) or makes them equal, and turns
+  the borders off and on. Every change is one undo step. Spelling marks
+  and Check spelling work in cells. A row is never split across pages;
+  PDF, Word and OpenDocument export keep the tables, and tables in
+  `.docx` and `.odt` files open as tables. The file is `.cwr` 1.6
+  (docs/FORMAT.md): a 1.5 Veranda Write opens it with each cell as a
+  paragraph and keeps the table when it saves.
+- **Templates** (1.6, W67): **File > New from template...** lists
+  Letter, CV, Report (a table, page numbers in the footer) and Meeting
+  notes, in English, and in Polish (List, Curriculum vitae, Raport, Notatka ze
+  spotkania) when Veranda's keyboard setting or the spelling options
+  say Polish, with a blank document first and your own templates after
+  them, "(yours)". The template opens as a new Untitled document with
+  today's date where it says `{date}` (in the template's language: "25
+  November 2026", "25 listopada 2026"); saving never changes the
+  template. **File > Save as template...** keeps the document as one of
+  yours, in `/DOCUMENTS/Templates` (a folder Veranda's updates never
+  write). Veranda's own are in `/VERANDA/TEMPLATES/EN` and `PL`; they
+  are made from the readable sources in `templates/` (tools/templates.py).
+- **AI help (optional)** (W68): the **AI** menu (the bar's last) has
+  Veranda Ask work on your text: **Rewrite**, **Shorten**, **Fix
+  grammar and spelling**, **Translate to English**, **Translate to
+  Polish**, **Summarise**, **Ask about this text...** (a question of up
+  to 60 characters). It works on the selection, or with nothing selected
+  on the paragraph at the cursor (selected first, so you see what goes).
+  Write puts itself aside and Veranda Ask opens with the request: it
+  shows exactly what would be sent and sends it only when you click
+  **Send** there; you read the answer and choose **Use this**, **Try
+  again** or **Cancel**, and Write comes back. Rewrite, Shorten, the
+  grammar and the translations put the answer in place of the text (in
+  the style of its first character, the answer's paragraphs in the
+  paragraph's style); Summarise and Ask put it as new paragraphs after
+  the paragraph (after a heading, as Body). The answer is selected and
+  is one undo step: **Undo** brings the text back. In a table AI help
+  works on one cell's text (the answer's paragraphs stay in that cell);
+  a selection over two cells, or one that holds a table, is refused.
+  Cancel in Veranda Ask changes nothing ("AI help cancelled"). If you
+  went back to Write with Alt+Tab before Veranda Ask answered, Write
+  says so, and takes the answer the next time it comes back, or with
+  **AI > Check for the answer**; if you changed the text meanwhile, the
+  answer is not used. While that Veranda Ask is still aside with the
+  request on its screen, a new request is refused: switch to it
+  (Alt+Tab) and Send or Cancel there first. If Veranda Ask could not
+  start (too little memory), Write says so when it is back and nothing
+  is sent. **What is sent**: only the text Write passes to
+  Veranda Ask (the selection or the paragraph: its characters, no
+  styles; 8,192 characters at most, a longer text is refused before
+  anything starts), your question, and the action; nothing else of the
+  document, nothing before you click Send in Veranda Ask, and Write
+  itself has no network code and no key or sign-in: Veranda Ask uses
+  the sign-in or API key you set up in it (if it is not signed in,
+  Write says how to set it up). The text goes to the AI service Veranda
+  Ask uses, under that service's terms; do not use AI help on text you
+  must not share. **Tools > AI help** turns it off (no AI menu) and on
+  again; the setting is kept in `/VERANDA/.SYSTEM/WRITE.CFG`. The files
+  of a request (`AI.IN`, `AI.REQ`, `AI.OUT`, `AI.RES` in
+  `/VERANDA/.SYSTEM`) are Veranda's `docs/AIREQ.md`; they are deleted
+  when the request is done.
 - **Spelling, English and Polish** (W56-W59; docs/SPELLING.md): words
   the dictionary has not are underlined with a dotted line as you write
   (looked at when typing pauses, so typing is as quick as without it) and
@@ -55,8 +124,10 @@ still `CmdrWrite`, so documents made before open as they did.
   monospaced font, Gate Sans for the others), tabs, line breaks, page
   breaks (and a paragraph's "page break before"), the paper and margins,
   the header and the footer (one line each, with page numbers as
-  {page} and {pages}, "not on the first page"). Tables become their
-  text, a row a paragraph, its cells apart by tabs. Left out, and said:
+  {page} and {pages}, "not on the first page"). Tables open as tables
+  (1.6): their columns' widths, the cells' paragraphs, borders on or off;
+  merged cells become one wider cell, a table inside a cell its text
+  (said). Left out, and said:
   pictures, drawings, formulas, text boxes, footnotes and endnotes,
   comments, the deleted text of tracked changes (the inserted text is
   kept: the changes accepted). A document of several hundred kilobytes
@@ -67,8 +138,9 @@ still `CmdrWrite`, so documents made before open as they did.
   default in `/DOCUMENTS` with the document's name; the document itself
   stays a `.cwr`. The file holds the paragraphs with their styles, the
   headings, the lists, the runs' fonts (Arial, Courier New for Gate Mono),
-  sizes, bold, italic and underline, tabs, page breaks, the page setup,
-  the header and the footer with their fields (page, pages, date, name),
+  sizes, bold, italic and underline, tabs, page breaks, tables (1.6),
+  the page setup, the header and the footer with their fields (page,
+  pages, date, name),
   Polish letters in UTF-8; Word and LibreOffice open it. It is written as
   it goes; the status bar shows how far, Esc stops it.
 
@@ -91,7 +163,8 @@ still `CmdrWrite`, so documents made before open as they did.
   of the document, by default in `/DOCUMENTS` with the document's name:
   its pages at the paper's size and margins, with the header and footer,
   bold, italic and underline, the paragraph styles' sizes, alignment and
-  indents, lists, page breaks; the text in PDF's own fonts (Helvetica,
+  indents, lists, page breaks, tables (each cell's box and its lines as
+  the screen has them); the text in PDF's own fonts (Helvetica,
   Courier for Gate Mono), selectable and searchable, Polish letters too.
   It is written as it goes, a little at a time (a document of megabytes
   needs no more memory than a page); the status bar shows the page, Esc
@@ -156,7 +229,7 @@ still `CmdrWrite`, so documents made before open as they did.
   screens (italic drawn whole: Veranda's own text cuts its slant).
 - **Alt+Tab** puts it aside with its document, as any Veranda program.
 - Veranda's look (Look 3, Sunroom): the menu bar (Veranda Write, File,
-  Edit, Text, Style, Format, Font, Size; their items in groups, each
+  Edit, Insert, Text, Style, Format, Font, Size, Tools, Table, AI; their items in groups, each
   command's keys at the right), a title band with a close box, a toolbar
   (pop-up lists for the font, the size and the paragraph's style; the
   buttons B, I, U; the alignment, the lists, the indent), a ruler (the
@@ -192,6 +265,18 @@ still `CmdrWrite`, so documents made before open as they did.
 | F7 | Check spelling (the panel; F7 again: Ignore) |
 | F8, a right click on a word | its spelling suggestions (a pop-up: a click or 1-7, Esc; the right click only while spelling is checked as you work) |
 | Alt+Tab | put Veranda Write aside (Veranda's switcher) |
+| Tab, Shift+Tab (in a table) | the next cell (in the last one: a new row), the one before |
+| Return (in a table) | a new paragraph in the cell |
+
+In a table: the arrows, Home and End go by the cell's lines (Up from a
+row's top line goes to the row above, and out of the table at its
+first row); Backspace at a cell's start and Delete at its end do nothing
+(they would join two cells); a selection that is not inside one cell
+(and not the whole table) cannot be typed over or deleted: the status
+bar says so; Backspace just after a table goes into its last cell.
+
+In the template chooser (File > New from template): Up and Down choose,
+Return or a click opens, Esc closes it.
 
 In the page setup panel (File > Page setup, Insert > Header and footer):
 Tab and the up and down arrows move between its items, left and right
@@ -224,7 +309,7 @@ sizes, the paragraph styles: press and drag to an item, or click and
 click), its buttons: B, I, U; left, centre, right, justify; a bulleted
 list, a numbered list (again: Body); indent less, more; the title band's
 close box closes the document. **Insert** has a page break, the date and time, the header and
-footer. The **Style** menu has the named styles, **Format** the alignment,
+footer, a table; the **Table** menu the table's commands. The **Style** menu has the named styles, **Format** the alignment,
 the indent, the line spacing and the space after paragraphs, **Font**
 the installed fonts, **Size** the sizes of the current font; Word count
 is in the Veranda Write menu, Find, Replace and Go to page in Edit,
@@ -233,6 +318,20 @@ File.
 
 ## Limits (stage 4, documents larger than RAM)
 
+- Tables (1.6): 8 columns at most; no table inside a table and no
+  merged cells (a Word or OpenDocument file's become a cell's text and
+  one wider cell); a row is 255 pixels tall at most (a taller cell's
+  lines below that are kept but not drawn) and holds 2,000 bytes
+  (typing stops there: "This row of the table is full"). Page breaks
+  cannot go inside a table; a cell's text always starts at the row's
+  top.
+- Templates (1.6): Veranda's templates are in English and Polish; the
+  date put for `{date}` is the X16's clock's (set it in Veranda's menu
+  bar), as "25 November 2026" or "25 listopada 2026". Your templates
+  are `.cwr` documents in `/DOCUMENTS/Templates`: delete or rename one
+  there with the desktop. The chooser lists 11 templates at most
+  (Veranda's four first, then yours by name; a name up to 39
+  characters).
 - Text is ASCII and Veranda's set above it, ISO-8859-16: Polish (Ą Ć Ę
   Ł Ń Ó Ś Ź Ż, typed with right Alt and Veranda's Polish keyboard on),
   German, French, Hungarian, Romanian, Croatian (DECISIONS W38). A font
@@ -342,8 +441,10 @@ File.
   have an empty paragraph between them. The files are not compressed
   (Word and LibreOffice read them; they are some times larger than
   theirs). At 8 MHz a `.docx` of 600 KB of XML (about 100 KB of text)
-  opens in about a minute; exporting it takes about as long
-  (DECISIONS W54).
+  opens in about half a minute, a guide of 3,800 words with 18 tables
+  made by LibreOffice in about 13 seconds (16 from an SD card);
+  exporting the large one takes about 50 seconds as a `.docx`, 30 as an
+  `.odt` (DECISIONS W54, W71).
 - The Open dialog lists the geoWrite documents of the folder it opens in
   (read before it opens); in a folder chosen inside the dialog they are
   not listed (W27). Converting one takes an overlay's RAM bank: the
@@ -488,6 +589,69 @@ that publish them (only you run those; or Actions > Dictionaries).
   into `/DOCUMENTS` (read back on the host: the document the program had;
   `tools/check_docx.py`), a big `.docx` opened and exported (timed);
   screenshots `oxnote`, `oxdoc`, `oxsave`, `oxodt` in `build/shots/`.
+  `SESSION=oxspeed` (W71; R49, 512 KB, a host folder and an SD card
+  image; `tools/oxspeed.sh` alone): LibreOffice's `.docx` made from HTML
+  (`tests/office`: the Veranda Desktop Guide, Writing and Asking on
+  Veranda, the Guide as `.odt`; `tools/md2html.py` made their HTML),
+  `tools/oxstress.py`'s Stress.docx (references, characters the set has
+  not, comments and CDATA in elements passed over, long names, a table in
+  a table) and the Guide deflated with fixed codes and in stored blocks,
+  each opened and its document and note compared with the host's; the
+  Guide exported both ways and checked; the times. `tools/profrun.sh`
+  profiles opening one of them (`tools/x16prof.sh` builds the profiling
+  emulator; `tools/prof.py` reads its counts by function and line).
+- **Tables and templates** (1.6, `make test`, tests/test_table.c):
+  2,000 random edits in and around tables (typing, Return and
+  Backspace in cells, Tab, rows and columns added and deleted, widths,
+  borders, undo and redo) against a fresh layout, every row's structure
+  and height, undo and redo to the bytes; a row, a column and a table
+  deleted keep the character style after them; the file 1.6 read back,
+  a row longer than a line, a table at the document's end; a PDF's cell
+  boxes; `.docx` and `.odt` round trips keeping the table codes; the
+  office fixtures' tables (and LibreOffice's reading of the exported
+  ones). The gate's `SESSION=table` (R49, 512 KB, a host folder and an
+  SD card image): a table inserted, typed in, wrapped, rows and columns
+  added and deleted, widths, borders, undo and redo, the edges
+  (refused), saved and opened again, exported as PDF, `.docx` and
+  `.odt` (the files read back with their tables), each step's table
+  codes and the redraw check; `SESSION=tspeed`: a key in a cell of a
+  10 x 5 table and of a 100-row table against a paragraph's;
+  `SESSION=templ` (R49, 512 KB, the clock the host's, a host folder and
+  an SD card image): the chooser, every template in both languages
+  with today's date, Save as template and the template opened again;
+  screenshots `tbdlg`, `tbtyped`, `tbrow`, `tbmenu`, `tbcols`,
+  `tbwdlg`, `tbwidths`, `tbnogrid`, `tbrefused`, `tbopened`,
+  `tpchoose`, `tpletter`, `tpcv`, `tpreport`, `tpmeet`, `tpchoosepl`,
+  `tpraport`, `tpsave`, `tpmine`, `tpcvpl` in `build/shots/`.
+- **AI help** (W68; `make test`, tests/test_ai.c): the text that goes to
+  Veranda Ask (a selection's characters, CR between paragraphs, no
+  codes, Polish as it is; the paragraph at the cursor; spaces only, over
+  8,192 characters, over two cells, into or out of a cell, a table in it
+  refused) and the answer put in (in place of the text or after its
+  paragraph, a heading's, in a cell, ends and runs of CR, bytes the text
+  cannot hold, an empty answer, 15 KB in pieces), each undone to the
+  bytes before and redone. The gate's `SESSION=ai` (R49, 512 KB, a host
+  folder) runs with `tools/askfake`, a stand-in for Veranda Ask that
+  answers as the script says (nothing is sent anywhere; the real Veranda
+  Ask's side of the hand-off is Veranda's own gate): every action, undo
+  and redo, Polish both ways, cancelled, not signed in, an error, an
+  answer that comes later, one after the text changed, a cell, refused
+  selections, Tools > AI help off and on, a text too long; each
+  request's AI.IN and AI.REQ byte for byte, the redraw check after each
+  step; screenshots `aimenu`, `aiask`, `aibefore`, `aiafter`,
+  `aisummary`, `ainosign`, `aierror`, `ainotyet`, `aichanged`, `aicell`,
+  `aicells`, `aioff`, `aitools`, `aiabout`, `ailong` in `build/shots/`;
+  (W69) the not-signed-in box over a long bulleted list, scrolled, an
+  item selected (`ainosignlist`): its rectangle and shadow as over blank
+  paper and its frame drawn (`tools/check_box.py`), then the redraw
+  check; (W70) a 640 KB guide of bulleted items, paged out to the card
+  at 512 KB: an item two thirds down, the cursor in it, and Find's
+  selection there, their AI.IN byte for byte and the answers in place of
+  exactly that text (`aibig`); a Veranda Ask put aside with a request
+  (the stand-in's `aside`): another request refused (`aiaside`), and
+  that Veranda Ask's answer, when it is brought back, in place of the
+  first request's text; a Veranda Ask that did not start (`nostart`):
+  said (`ainostart`), the request's files deleted.
 - **Spelling** (`make test`, tests/test_spell.c): words with every Polish
   letter in lower case, capitalised and in capitals, English
   contractions and possessives, the text's words (hyphens, digits,
@@ -522,8 +686,8 @@ that publish them (only you run those; or Actions > Dictionaries).
 4. **`.docx` and `.odt`** (this): opened (converted) and exported on the
    machine (Commander Calc's ZIP, inflate and XML reader, reworked to
    stream).
-5. Tables, pictures from Paint, a spelling checker with a dictionary on
-   the card.
+5. Tables (done in 1.6, with templates), pictures from Paint, a
+   spelling checker with a dictionary on the card (done: W56-W61).
 
 The design: `DECISIONS.md` (W1, W2 ...). The file format:
 `docs/FORMAT.md`.

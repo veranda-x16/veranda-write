@@ -1,0 +1,30 @@
+# Veranda Write's template: a letter (tools/templates.py makes
+# build/veranda/TEMPLATES/EN/Letter.cwr from it; README.md, "Templates")
+@lang en
+@file Letter
+>[Your name]
+>[Street and number]
+>[Postcode and town]
+>[Telephone, e-mail]
+
+>{date}
+
+[Recipient's name]
+[Company]
+[Street and number]
+[Postcode and town]
+
+**Subject: [the subject of the letter]**
+
+Dear [name],
+
+[The first paragraph: why you are writing.]
+
+[The second paragraph: the details.]
+
+[The last paragraph: what you would like to happen next.]
+
+Yours sincerely,
+
+
+[Your name]

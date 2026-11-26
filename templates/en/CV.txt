@@ -1,0 +1,28 @@
+# Veranda Write's template: a CV (résumé)
+@lang en
+@file CV
+= [Your name]
+[Street, town] · [Telephone] · [E-mail]
+
+== Profile
+[Two or three sentences about you: what you do, what you are good at, what you are looking for.]
+
+== Experience
+@widths 25 75
+| **[2022 - now]** | **[Job title]**, [Company], [Town]\
+[What you did and what came of it.] |
+| **[2018 - 2022]** | **[Job title]**, [Company], [Town]\
+[What you did and what came of it.] |
+
+== Education
+@widths 25 75
+| **[2014 - 2018]** | [Degree], [University or school] |
+
+== Skills
+@widths 35 65
+| Languages | [English (native), Polish (good)] |
+| Computers | [Programs, systems, languages] |
+| Other | [Driving licence, certificates] |
+
+== Interests
+[A line about what you do outside work.]

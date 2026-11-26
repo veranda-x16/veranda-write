@@ -28,16 +28,26 @@
 #define fc_reset e_fc_reset
 #define fc_setup e_fc_setup
 
-#define FCB 4                           /* font banks at most (W38: a font in 3) */
+#define FCB 5                           /* font banks at most (W38: a font in 3; W71: 4 held Gate Sans 27
+                                           and 18, not 12 too: each heading's font read again) */
 static unsigned char fc_bank[FCB] = { 0 };   /* (DATA: main RAM) */
 static unsigned int fc_used[FCB] = { 0 };
 #define OFFS (2 * NW)                   /* the offsets' bytes */
 
-#define ROWB  (IOBUF - 8)               /* iobuf: a row of the file's bitmap */
+#define ROWB  384                       /* iobuf: a row of the file's bitmap (W71: after it */
+#define FX_GL 128                       /*   fx_gl, a row's glyphs on their way to the bank) */
 
-#pragma bss-name (push, "OVL8BSS")
-static unsigned int idx[193];           /* each glyph's first pixel in the bitmap's rows */
-#pragma bss-name (pop)
+/* (W71) v/fcrow.s: a row's glyphs, the window's facts (its variables,
+   OVL8BSS) */
+extern unsigned int fx_idx[193];        /* each glyph's first pixel in the bitmap's rows */
+#define idx fx_idx
+extern unsigned char fx_k, fx_n, fx_ng;
+extern unsigned int fx_wb, fx_have, fx_setw;
+#define setw fx_setw
+#define wb fx_wb
+#define have fx_have
+#define ng fx_ng
+unsigned char fc_xrow(void);
 static unsigned char fh;
 
 static unsigned char rd(void *p, unsigned int n)
@@ -53,9 +63,9 @@ static unsigned char seek(unsigned long o)
 /* the font fcl_name at the point size nearest fcl_size: into the cache;
    0 done (fcl_ the slot's facts, the widths at fcl_w), 1 not */
 #pragma bss-name (push, "OVL8BSS")
-static unsigned char hd[8], n, bd, d, k, kb, w, gb, sh, ng, nb, kk[3];
+static unsigned char hd[8], n, bd, d, k, kb, w, nb, kk[3], fb;
 static unsigned long o, ob, bo, rp;
-static unsigned int setw, i, need, bit, wb, have, b, ro;
+static unsigned int i, need, b, ro, fd;
 #pragma bss-name (pop)
 
 /* row i's window from byte wb: read (iobuf), a 0 past it */
@@ -73,7 +83,7 @@ static unsigned char win(void)
 unsigned char fc_load(void)
 {
     unsigned char *gl = iobuf + ROWB;   /* (main RAM: bk_wr reads it with the font bank mapped) */
-    unsigned char *t = iobuf, *p;
+    unsigned char *t = iobuf;
     char *q = (char *)iobuf;
     fcl_full = 0;
     q = strcpy(q, VR_FONTSPATH) + sizeof VR_FONTSPATH - 1;
@@ -179,41 +189,34 @@ unsigned char fc_load(void)
     bk_wr(fcl_bank, fcl_base, iobuf, OFFS);
     /* the rows: each glyph's pixels out of the bitmap's row, read a
        window of it at a time (a row with $A0-$FF may be longer than
-       iobuf: W38) */
+       iobuf: W38); v/fcrow.s takes them out (W71), fx_gl's bytes go to
+       the bank a row's place at a time */
     rp = bo;
     for (i = 0; i < fcl_h; ++i, rp += setw) {
+        if (i < fcl_split) {
+            fb = fcl_bank;
+            fd = fcl_base + OFFS + i * fcl_rowlen;
+        } else if (i < fcl_split2) {
+            fb = fcl_bank2;
+            fd = 0xA000 + (i - fcl_split) * fcl_rowlen;
+        } else {
+            fb = fcl_bank3;
+            fd = 0xA000 + (i - fcl_split2) * fcl_rowlen;
+        }
         wb = 0;
         if (win())
             goto fail;
-        ro = 0;
-        for (k = 0; k < ng; ++k) {
-            bit = idx[k];
-            w = (unsigned char)(idx[k + 1] - bit);
-            gb = (w + 7) >> 3;
-            if (!gb)
-                continue;               /* (a space; '?' in its place) */
-            b = bit >> 3;
-            if (b + gb + 1 > wb + have && wb + have < setw) {
-                wb = b;                 /* (the shift reads a byte past) */
-                if (win())
-                    goto fail;
+        fx_k = 0;
+        do {
+            fx_n = 0;
+            d = fc_xrow();
+            if (fx_n) {
+                bk_wr(fb, fd, gl, fx_n);
+                fd += fx_n;
             }
-            p = iobuf + (b - wb);
-            sh = bit & 7;
-            for (n = 0; n < gb; ++n) {
-                d = (unsigned char)(((unsigned int)p[n] << 8 | p[n + 1]) >> (8 - sh));
-                if (n == gb - 1 && (w & 7))
-                    d &= (unsigned char)(0xFF00 >> (w & 7));
-                gl[n] = d;
-            }
-            if (i < fcl_split)
-                bk_wr(fcl_bank, fcl_base + OFFS + i * fcl_rowlen + ro, gl, gb);
-            else if (i < fcl_split2)
-                bk_wr(fcl_bank2, 0xA000 + (i - fcl_split) * fcl_rowlen + ro, gl, gb);
-            else
-                bk_wr(fcl_bank3, 0xA000 + (i - fcl_split2) * fcl_rowlen + ro, gl, gb);
-            ro += gb;
-        }
+            if (d == 2 && win())
+                goto fail;
+        } while (d);
     }
     FClose(fh);
     fc_used[kb] += need;

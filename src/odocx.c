@@ -37,7 +37,8 @@ static const struct ntab te = NTAB(dxe), ta = NTAB(dxa);
 #define DP_DOC  4
 #define DP_HF   5
 static unsigned char part, skipd, skipk, boxseen, e, ctx, indef, inpar, intext, ininstr, insect, cst;
-static unsigned char tdepth, cellc, cellp, fld, fk, fsup, sect_br, a_on, a_t, a_id, nofirst;
+static unsigned char tdepth, fld, fk, fsup, sect_br, a_on, a_t, a_id, nofirst;
+static unsigned char inb;              /* (1.6) in w:tblBorders */
 #define CX_P 1                          /* properties: a paragraph's (pPr) */
 #define CX_R 2                          /*   a run's (rPr) */
 #define SK_PIC 1
@@ -118,6 +119,15 @@ static void FASTCALL tgt(unsigned char t)
     tp = pr_t = t;
 }
 
+/* (1.6) a paragraph in a table: a cell's (its codes: oemit.c's em_tbl)
+   or, in a table in a cell, the cell's */
+static void tpar(void)
+{
+    em_par();
+    tgt(PT_PAR);
+    em_tbl(tdepth == 1 ? TB_PARA : TB_NEST, 0);
+}
+
 /*---------------------------------------------------------------
   the tokens
  ---------------------------------------------------------------*/
@@ -133,21 +143,23 @@ static void start(void)
         if (!doc)
             break;
         inpar = 1;
-        if (tdepth) {
-            if (cellp++)
-                em_char(' ');
-            tgt(PT_NONE);
-        } else {
+        if (tdepth)
+            tpar();                     /* (1.6: a table's, a cell's) */
+        else {
             em_par();
             tgt(PT_PAR);
         }
         break;
     case DXE_w_pPr:
+        if (part == DP_NUM) {
+            skip(0);                    /* (W71: a list level's: nothing of it read) */
+            break;
+        }
         ctx = CX_P;
         tgt(cst ? PT_STY : indef ? PT_DEF : inpar ? tp : PT_NONE);
         break;
     case DXE_w_rPr:
-        if (doc && inpar && ctx == CX_P) {
+        if ((doc && inpar && ctx == CX_P) || part == DP_NUM) {
             skip(0);                    /* (the paragraph mark's) */
             break;
         }
@@ -169,19 +181,21 @@ static void start(void)
         if (doc && ctx != CX_P)
             em_char(CH_TAB);
         break;
+    case DXE_w_tblPr: case DXE_w_tcPr:
+        tgt(PT_NONE);                   /* (1.6: their borders, a span read; nothing else) */
+        break;
+    case DXE_w_tblBorders:
+        inb = 1;
+        break;
     case DXE_w_tabs: case DXE_mc_Fallback: case DXE_w_delInstrText: case DXE_w_delText:
-    case DXE_w_tblPr: case DXE_w_tblGrid: case DXE_w_trPr: case DXE_w_tcPr: case DXE_w_sdtPr:
+    case DXE_w_trPr: case DXE_w_sdtPr: case DXE_w_tcBorders: case DXE_w_tblCellMar:
     case DXE_w_sdtEndPr: case DXE_w_latentStyles: case DXE_w_lvlOverride: case DXE_w_background:
     case DXE_w_fldData:
         skip(0);
         break;
     case DXE_w_cr:
-        if (doc) {
-            if (tdepth)
-                em_char(' ');
-            else
-                em_split();
-        }
+        if (doc)
+            em_split();                 /* (1.6: in a table a further paragraph of its cell) */
         break;
     case DXE_w_noBreakHyphen:
         if (doc)
@@ -211,22 +225,17 @@ static void start(void)
         ++oxc.changes;
         break;
     case DXE_w_tbl:
-        if (!tdepth++ && doc && part == DP_DOC)
-            ++oxc.tables;
+        /* (1.6) a table kept: its rows' paragraphs (a table in a cell: its
+           text the cell's, counted) */
+        if (tdepth++) {
+            if (doc && part == DP_DOC)
+                ++oxc.tables;
+        } else
+            em_tbl(TB_START, inb = 0);
         break;
-    case DXE_w_tr:
-        if (tdepth == 1) {
-            em_par();
-            cellc = 0;
-        } else if (tdepth)
-            em_char(' ');
-        break;
-    case DXE_w_tc:
-        if (tdepth == 1 && cellc++)
-            em_char(CH_TAB);
-        else if (tdepth > 1)
-            em_char(' ');
-        cellp = 0;
+    case DXE_w_tr: case DXE_w_tc:
+        if (tdepth == 1)
+            em_tbl(e == DXE_w_tr ? TB_ROW : TB_CELL, 0);
         break;
     case DXE_w_sectPr:
         insect = 1;
@@ -248,7 +257,7 @@ static void attr(void)
 {
     static unsigned char a;
     static int v;
-    if (!(dxe_aw[e >> 3] & (1 << (e & 7))))
+    if (!(dxe_aw[e >> 3] & obit[e & 7]))
         return;                         /* (its attributes not read) */
     a = nlook(&ta);
     if (!a)
@@ -295,6 +304,14 @@ static void attr(void)
         case DXE_w_type:
             if (insect && XVAL[0] == 'c')
                 a_t = 1;                /* (continuous: no page break) */
+            return;
+        case DXE_w_gridSpan:            /* (1.6) */
+            if (tdepth == 1)
+                em_tbl(TB_SPAN, onum(XVAL));
+            return;
+        case DXE_w_top:
+            if (inb && tdepth == 1)
+                em_tbl(TB_BORD, XVAL[0] == 'n' ? TR_NOGRID : 0);   /* (nil, none) */
             return;
         case DXE_w_name:
             if (cst)
@@ -347,6 +364,10 @@ static void attr(void)
     case DXE_w_rFonts:
         if (ctx == CX_R && (a == DXA_w_ascii || a == DXA_w_hAnsi))
             SET(F_MONO, mono(XVAL));
+        return;
+    case DXE_w_gridCol:                 /* (1.6) */
+        if (a == DXA_w_w && tdepth == 1)
+            em_tbl(TB_COL, onum(XVAL));
         return;
     case DXE_w_pgSz:
         v = onum(XVAL);
@@ -467,12 +488,12 @@ static void open(void)
     case DXE_w_br:
         if (part < DP_DOC)
             return;
-        if (tdepth || part == DP_HF)
+        if (part == DP_HF)
             em_char(' ');
-        else if (a_t == 1)
+        else if (a_t == 1 && !tdepth)
             em_pbreak();
-        else if (!a_t)
-            em_split();
+        else if (!a_t || tdepth)
+            em_split();                 /* (1.6: in a table a further paragraph of its cell) */
         return;
     case DXE_w_fldSimple:
         if (part == DP_HF && a_t) {
@@ -499,6 +520,10 @@ static void open(void)
         if (a_id && st_type == 1)
             def_ps = i;
         return;
+    case DXE_w_lvl:
+        if (cur_lvl)
+            skip(0);                    /* (W71: only the first level's format is read) */
+        return;
     case DXE_Relationship:
         if (a_t && reln < NREL) {
             rel_h[reln] = a_h;
@@ -520,18 +545,16 @@ static void end(void)
             break;
         inpar = 0;
         ctx = 0;
-        if (!tdepth) {
-            em_endpar();
-            if (sect_br) {
-                em_pbreak();
-                sect_br = 0;
-            }
+        em_endpar();
+        if (sect_br && !tdepth) {
+            em_pbreak();
+            sect_br = 0;
         }
         break;
     case DXE_w_pPr: case DXE_w_rPr:
         ctx = 0;
         if (inpar && !cst)
-            tgt(tdepth ? PT_NONE : PT_PAR);
+            tgt(PT_PAR);
         break;
     case DXE_w_t:
         intext = 0;
@@ -540,12 +563,15 @@ static void end(void)
         ininstr = 0;
         break;
     case DXE_w_tbl:
-        if (tdepth)
-            --tdepth;
+        if (tdepth && !--tdepth)
+            em_tbl(TB_END, 0);          /* (1.6: the table's end) */
         break;
-    case DXE_w_tr:
+    case DXE_w_tc:
         if (tdepth == 1)
-            em_endpar();
+            em_tbl(TB_ENDC, 0);
+        break;
+    case DXE_w_tblBorders:
+        inb = 0;
         break;
     case DXE_w_style:
         cst = 0;
@@ -621,23 +647,29 @@ static unsigned char FASTCALL rdpart(unsigned char p, const char *s)
             if (ed < NEST)
                 est[ed++] = e;
             start();
-            xm_skipa = !(dxe_aw[e >> 3] & (1 << (e & 7)));   /* (its attributes passed over) */
+            xm_skipa = !(dxe_aw[e >> 3] & obit[e & 7]);   /* (its attributes passed over) */
             break;
         case XT_ATTR: attr(); break;
         case XT_OPEN: open(); break;
         case XT_TEXT: text(); break;
         case XT_END: end(); break;
         }
+        if (skipd && skipk != SK_PIC)
+            xm_skipa = 2;               /* (W71: passed over whole by the tokenizer: its end next) */
     }
     return 1;
 }
 
 static void FASTCALL hfpart(unsigned char k, const char *t)
 {
+    static unsigned char n;
     if (!t[0])
         return;
     strcpy(XNAME, "word/");
-    strncat(XNAME, t, XNAMEN - 6);
+    /* (strncat's, here: the library's 72 bytes were main RAM's, W68) */
+    for (n = 0; n < XNAMEN - 6 && t[n]; ++n)
+        XNAME[5 + n] = t[n];
+    XNAME[5 + n] = 0;
     em_hfbegin(k);
     rdpart(DP_HF, XNAME);
     em_hfend();

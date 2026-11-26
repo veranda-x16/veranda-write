@@ -32,14 +32,5 @@ static const unsigned char pw_helvb[192] = {
     153, 153, 153, 153, 153, 153, 153, 139, 153, 153, 153, 153, 153, 139,  83, 139,
 };
 #define PW_BULLET 88, 88   /* WinAnsi's $95 (the lists' bullet) */
-/* the 40 bytes where ISO-8859-16 is not WinAnsiEncoding */
-static const char pdf_diff[] =
-    "161 /Aogonek /aogonek /Lslash /Euro /quotedblbase /Scaron 168 /scaron "
-    "170 /Scommaaccent 172 /Zacute 174 /zacute /Zdotaccent 178 /Ccaron "
-    "/lslash /Zcaron /quotedblright 184 /zcaron /ccaron /scommaaccent 188 "
-    "/OE /oe /Ydieresis /zdotaccent 195 /Abreve 197 /Cacute 208 /Dcroat "
-    "/Nacute 213 /Ohungarumlaut 215 /Sacute /Uhungarumlaut 221 /Eogonek "
-    "/Tcommaaccent 227 /abreve 229 /cacute 240 /dcroat /nacute 245 "
-    "/ohungarumlaut 247 /sacute /uhungarumlaut 253 /eogonek /tcommaaccent"
-    ;
+#include "pdfenc.h"
 #endif

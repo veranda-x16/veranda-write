@@ -14,7 +14,7 @@ what Write changed is said below.
 | `/VERANDA/DICT/PL.DIC.txt` | its sources and licences (CC BY-SA 4.0; Morfologik's BSD notice) | 2,643 bytes |
 | `/VERANDA/DICT/EN.DIC` | English: 165,326 word forms | 743,424 bytes |
 | `/VERANDA/DICT/EN.DIC.txt` | its source and licence (SCOWL's) | 12,713 bytes |
-| `/VERANDA/DICT/SPELL.OVL` | spelling's code: Write's overlays 23-26, loaded when spelling is first used (must be from the same build as `Veranda Write.cvt`: it carries the build's mark) | about 22 KB |
+| `/VERANDA/DICT/SPELL.OVL` | spelling's code, Write's overlays 23-26, loaded when spelling is first used; since 1.6 also the Word and OpenDocument code, overlays 17-22, loaded for an import or an export (must be from the same build as `Veranda Write.cvt`: it carries the build's mark) | about 67 KB |
 | `/VERANDA/.SYSTEM/WRITE.UDIC` | the user's own words (made by Add; never shipped) | |
 | `/VERANDA/.SYSTEM/WRITE.CFG` | the spelling settings (made when they are first changed; never shipped) | 7 bytes |
 
@@ -74,7 +74,12 @@ program's overlays into RAM banks at its start for good, and four more
 document (DECISIONS W59). `SPELL.OVL` is read into four banks when
 spelling is first used (live marking: the first pause after a document
 is shown), and they and the dictionary's banks are given back before a
-document is opened and before an export, then read again.
+document is opened and before an export, then read again. Since 1.6
+(W66) the same file also carries the code that opens and exports Word
+and OpenDocument files (overlays 17-22): the tables' three overlays
+wanted those banks, so it is read only for an import (four overlays)
+or an export (three) and given back after. Without `SPELL.OVL` Write
+runs, but has neither spelling nor .docx and .odt.
 
 `WRITE.UDIC` is UTF-8, a word a line, lower case: it can be edited on any
 computer. It holds the words of both languages (a name added while
@@ -104,7 +109,7 @@ on a card without `.SYSTEM`); they are read when Write starts. The file:
 |---|---|---|
 | 0 | 4 | `WCFG` |
 | 4 | 1 | version, 1 (a later version only adds fields after these) |
-| 5 | 1 | flags: bit 0 misspellings not marked, bit 1 spelling only when asked; the others 0 |
+| 5 | 1 | flags: bit 0 misspellings not marked, bit 1 spelling only when asked, bit 2 AI help off (W68: Tools > AI help; no AI menu); the others 0 |
 | 6 | 1 | the language of new documents: 1 English (0 read as English too), 2 Polish, 3 the keyboard's |
 
 A missing file, a shorter one, one that does not start `WCFG` or of
@@ -201,7 +206,8 @@ most 31 bytes. A word in capitals of at most 5 letters is an abbreviation
 
 Veranda's package build (`tools/mkdist.sh` in the Veranda tree) builds
 Write with `make veranda SDK=...`. That also puts spelling's code in
-`build/veranda/DICT/SPELL.OVL` (about 22 KB). The package copies it to
+`build/veranda/DICT/SPELL.OVL` (about 67 KB: spelling's code and, since
+1.6, the Word and OpenDocument code). The package copies it to
 `/VERANDA/DICT/` on the card, from the same build as `Veranda Write.cvt`
 (`SPELL.OVL` of another build is refused: no spelling). Since W61 the
 dictionaries are not in the package (above: their own release);

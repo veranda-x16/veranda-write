@@ -28,10 +28,14 @@ ALLOW = {
              '_t_named', '_t_format', '_t_body', '_fp_open', '_fp_key', '_fp_press', '_fp_next',
              '_t_count', '_t_goto', '_t_date', '_f_ldstep', '_t_popup',
              '_pg_loaddef', '_pp_key', '_pp_open', '_pp_press', '_t_pbreak', '_t_pdf',
-             '_sp_fkey', '_sp_tick', '_spp_key', '_spp_press', '_t_tools', '_sp_cfgload', '_ovl_clear'},
+             '_sp_fkey', '_sp_tick', '_spp_key', '_spp_press', '_t_tools', '_sp_cfgload', '_ovl_clear',
+             '_tb_about', '_tb_cmd', '_tb_key', '_tb_ntempl', '_tb_pbreak', '_tb_start', '_tb_stempl',
+             '_tb_tinsert', '_ai_go'},
     'pgpanel.o': {'_pg_loaddef', '_pg_export', '_pg_field', '_sp_unload'},
-    'files.o': {'_sp_unload'},
-    'tools.o': {'_m_item'},     # (the lists' routine: the kernel calls it in appBank, overlay 1)
+    'files.o': {'_sp_unload', '_ox_up', '_ox_down'},
+    'oxnote.o': {'_ox_down'},   # (W66: callb, its own bank given back)
+    'spload.o': {'_ai_cmd'},    # (W68: callb, overlay 31 loaded first)
+    'tools.o': {'_m_item', '_tb_mtext'},   # (the lists' routine: the kernel calls it in appBank, overlay 1)
     'view.o': {'_v_all', '_v_frame', '_v_refresh', '_t_toolbar', '_v_fix_cursor', '_v_scroll',
                '_v_title', '_t_status'},
     'view2.o': {'_t_sbar'},
@@ -39,7 +43,7 @@ ALLOW = {
     'tbar.o': {'_t_ruler'},
     'cbuf.o': {'_sw_stamp'},    # (data in overlay 11's bank: cbuf.c maps it first, sw_tbank)
     'cbread.s.o': {'_sw_stamp'},
-    'main.o': {'_ui_main', '_vr_file', '_sp_load'},   # (bank 1, 3, 22 mapped first)
+    'main.o': {'_ui_main', '_vr_file', '_sp_load'},   # (bank 1, 3, 16 mapped first)
     # (W56-W59) spelling: v/spell.s's wrappers (far); the panel's, the
     # pop-up's and the Tools menu's routines through callb
     'spell.s.o': '*',
@@ -48,8 +52,16 @@ ALLOW = {
     'sppop.o': {'_spp_open', '_so_open', '_so_close', '_so_save'},
     'spui.o': {'_so_key', '_so_press'},   # (W60: the options' panel, overlay 24)
     'spopt.o': {'_sp_cfgsave'},
-    'test.o': {'_log_state', '_sp_bench', '_sp_tgate'},
+    'test.o': {'_log_state', '_sp_bench', '_tb_tgate'},   # (tb_tgate: test.c's overlay part calls it, both in 30)
+    # (1.6, W62-W67) the tables' overlays 27-29: callb's
+    'layfix.o': {'_tb_wrap'},
+    'tbui.o': {'_tb_nav'},
+    'pdf.o': {'_tb_pdf'},
+    'oexp.o': {'_tb_do'},
+    'tbcmd.o': {'_f_discard', '_f_new', '_f_saveas', '_f_startdoc', '_f_tload', '_pg_export', '_pg_loaddef',
+                '_t_pbreak', '_tb_do'},
     'ovlclr.o': {'_f_quit'},
+    'tgate.o': {'_f_quit'},
 }
 
 

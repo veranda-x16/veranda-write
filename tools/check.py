@@ -100,7 +100,7 @@ def main():
               % (n, g['chars'], g['lines'], g['pages'], g['sum'], g['psum'], g['modified'], g['banks'], g['free'],
                  g['name']))
     if not partial and exp.get('SESSION') != 'speed':
-        for marker in ('CW ASIDE', 'CW DESK RESUME', 'CW BACK') if exp.get('SESSION') not in ('page', 'office', 'redraw') else ():
+        for marker in ('CW ASIDE', 'CW DESK RESUME', 'CW BACK') if exp.get('SESSION') not in ('page', 'office', 'redraw', 'table', 'templ', 'tspeed', 'oxspeed') else ():
             if marker not in con:
                 bad.append('no "%s" (Alt+Tab)' % marker)
         for name, want in exp['files'].items():
@@ -276,8 +276,35 @@ def main():
                                      'd': 'open Report.docx (converted)', 'o': 'open Notes.odt (converted)',
                                      'b': 'open Big report.docx (converted)', 'w': 'export Report as .docx',
                                      'v': 'export Report as .odt', 'x': 'export Big report as .docx',
-                                     'y': 'export Big report as .odt'}.get(m.group(1), m.group(1)),
+                                     'y': 'export Big report as .odt',
+                                     'A': 'open Writing and Asking on Veranda.docx', 'O': 'open Guide.odt (the Guide as .odt)',
+                                     'G': 'open Veranda Desktop Guide.docx', 'X': 'export the Guide as .docx',
+                                     'Q': 'export the Guide as .odt', 'S': 'open Stress.docx',
+                                     'F': 'open Fixed codes.docx', 'K': 'open Kept in blocks.docx'}.get(m.group(1), m.group(1)),
                                     int(m.group(2), 16) / MHZ))
+    # (1.6, W62-W66) the tables' codes ("CW TABLE n rows cells sum",
+    # v/tbcmd.c) against the model's; the files' (tools/cwrd.py's tab_sum)
+    tb = {int(m.group(1), 16): [int(m.group(k), 16) for k in (2, 3, 4)]
+          for m in re.finditer(r'CW TABLE ([0-9A-F]{8}) ([0-9A-F]{8}) ([0-9A-F]{8}) ([0-9A-F]{8})', con)}
+    for k, rows, cells, sm in exp.get('tables', []):
+        g = tb.get(k)
+        if g is None:
+            if not partial:
+                bad.append('tables %d: not logged' % k)
+        elif g != [rows, cells, sm]:
+            bad.append('tables %d: %d rows, %d cells, sum %08X; want %d, %d, %08X' % (k, g[0], g[1], g[2], rows, cells, sm))
+    if tb:
+        print('tables: %d logged, %s' % (len(tb), ', '.join('%d rows %d cells' % (v[0], v[1]) for v in list(tb.values())[-3:])))
+    for name, want in exp.get('tfiles', {}).items() if not partial else []:
+        try:
+            d = cwrd.read(os.path.join(run, name))
+        except (OSError, cwrd.FormatError) as e:
+            bad.append('%s: %s' % (name, e))
+            continue
+        got_t = list(cwrd.tab_sum(d.tables()))
+        if got_t != want:
+            bad.append('%s: tables %r, want %r' % (name, got_t, want))
+        print('file %s: tables %d rows, %d cells (version %d.%d)' % ((name,) + tuple(got_t[:2]) + d.version))
     # (W61) said once: the console holds it exactly once
     for t in exp.get('once', []) if not partial else []:
         if con.count(t) != 1:

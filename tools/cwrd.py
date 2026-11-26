@@ -23,6 +23,7 @@ import struct
 import sys
 
 K_FIRST, K_LAST, K_CS, K_PS, K_PB = 0x10, 0x17, 0x10, 0x11, 0x12
+K_TROW, K_TCELL, K_TPARA = 0x14, 0x15, 0x16        # (1.6: tables, W62)
 PAGE_FMT = '<BBHHHHHH64s64s'            # (1.4: the PAGE chunk, 142 bytes)
 PAGE_KEYS = ('paper', 'flags', 'w', 'h', 'top', 'bottom', 'left', 'right', 'head', 'foot')
 CR = 0x0D
@@ -87,6 +88,20 @@ class Doc:
                 raise FormatError('byte %02X at %d' % (c, i))
             f, z, g, _ = self.styles[s]
             out.append((c, self.fonts[f], z, g))
+            i += 1
+        return out
+
+    def tables(self):
+        """(1.6) the table codes in order: (paragraph's number, kind, arg)"""
+        t, i, n, out = self.text, 0, 0, []
+        while i < len(t):
+            c = t[i]
+            if K_FIRST <= c <= K_LAST:
+                if K_TROW <= c <= K_TPARA:
+                    out.append((n, c, t[i + 1]))
+                i += 3
+                continue
+            n += c == CR
             i += 1
         return out
 
@@ -170,11 +185,14 @@ def text(d):
     return ''.join(out)
 
 
-def write(path, chars, fonts=None, paras=None, minor=1, breaks=(), page=None, lang=0):
+def write(path, chars, fonts=None, paras=None, minor=1, breaks=(), page=None, lang=0, tcodes=None):
     """a document of chars ((c, font, size, flags)...), a style code
     wherever the style changes; paras: each paragraph's style (a code at
     the start of each that is not Body); minor 0: a 1.0 file (no PARA);
-    lang (1.5, W57): the spelling language, 1 English, 2 Polish"""
+    lang (1.5, W57): the spelling language, 1 English, 2 Polish; tcodes
+    (1.6, W62): each paragraph's table code, None or ('R', flags, width),
+    ('C', width), ('P',) (after its paragraph code)"""
+    tcodes = list(tcodes or [])
     fonts = list(fonts or [])
     styles = []
     text = bytearray()
@@ -203,6 +221,13 @@ def write(path, chars, fonts=None, paras=None, minor=1, breaks=(), page=None, la
     def pcode():
         if np < len(paras) and paras[np] != BODY:
             text.extend(bytes([K_PS, pst.index(paras[np]), K_PS]))
+        t = tcodes[np] if np < len(tcodes) else None
+        if t and t[0] == 'R':
+            text.extend(bytes([K_TROW, t[1], K_TROW, K_TCELL, t[2], K_TCELL]))
+        elif t and t[0] == 'C':
+            text.extend(bytes([K_TCELL, t[1], K_TCELL]))
+        elif t:
+            text.extend(bytes([K_TPARA, 0, K_TPARA]))
     pcode()
     for i, (c, f, z, g) in enumerate(chars):
         if i in breaks:
@@ -245,6 +270,16 @@ def doc_sum(chars):
     for c, f, z, g in chars:
         s += c + (g << 8) + (z << 12) + (sum(f.encode('latin-1')) << 16)
     return s & 0xFFFFFFFF
+
+
+def tab_sum(codes):
+    """(1.6) the table codes' sum, as the test build logs it ("CW TABLE":
+    v/tbcmd.c): s = s * 31 + 7 paragraph + 256 kind + arg, 32 bits; and
+    the rows and cells counted"""
+    s = 0
+    for n, k, a in codes:
+        s = (s * 31 + 7 * n + 256 * k + a) & 0xFFFFFFFF
+    return (sum(1 for _, k, _ in codes if k == K_TROW), sum(1 for _, k, _ in codes if k == K_TCELL), s)
 
 
 def par_sum(paras):

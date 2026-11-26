@@ -1,4 +1,4 @@
-/* Veranda Write's gate: the test build's part (-DCW_TEST; overlay 27,
+/* Veranda Write's gate: the test build's part (-DCW_TEST; overlay 30,
    its variables and small entry points in main RAM: the test build's
    main RAM is the program's but for them, W48). test_start reads the session (CW.PLY,
    tools/script.py writes it) into a RAM bank and starts the player
@@ -22,6 +22,7 @@
 #include "../spell.h"
 
 extern unsigned char play_bank, play_st, play_t0[4];
+unsigned int __fastcall__ sw_xfer(unsigned char h, unsigned char b, unsigned int n, unsigned char w);
 void play_go(void);
 void Player(void);
 
@@ -30,8 +31,8 @@ static char line[160];                  /* (main RAM: LogText reads it) */
 static unsigned char t_k;               /* (test_key's) */
 static char mk_w[16];                   /* (test_mark's: the caller's name, copied) */
 
-#pragma code-name ("OVERLAY27")
-#pragma rodata-name ("OVL27RO")
+#pragma code-name ("OVERLAY30")
+#pragma rodata-name ("OVL30RO")
 static unsigned char clk[4], armed, playing, lat_k, lats;
 static unsigned long lat_t0;
 static const char hex[] = "0123456789ABCDEF";
@@ -88,8 +89,9 @@ static void e_test_aside(void)
     LogText(line);
 }
 
-/* The session goes into this overlay's own bank after its code ($B000
-   on: a bank fewer; 4,096 bytes, tools/script.py) */
+/* The session goes into a bank of its own (8,192 bytes at most,
+   tools/script.py; 1.6: this overlay has its bank whole, the gate's
+   player and hooks in it too) */
 static char ply[] = "CW.PLY";           /* (main RAM: the kernel reads it) */
 
 static void e_test_start(void)
@@ -108,9 +110,9 @@ static void e_test_start(void)
         LogText(line);
         return;
     }
-    FRead(h, (void *)0xB000, 4096);
+    play_bank = BankAlloc(1);
+    sw_xfer(h, play_bank, 8192, 0);     /* (main RAM's: it maps the bank) */
     FClose(h);
-    play_bank = bankt;
     play_go();
     playing = 1;
     asideVector = VR_FN(cw_aside);
@@ -219,8 +221,8 @@ static void log_state(void)
    rows that differ (0: the edits drew what a full drawing draws). The
    paper's bookkeeping (clr_y, clr_pg) put back as it was, so the next
    edit is drawn as it would have been without the check */
-#pragma bss-name (push, "OVL27BSS")
-static unsigned char rh[TA_END - TA_TOP + 1];   /* (a row's hash, a byte: 4 KB for the session after it) */
+#pragma bss-name (push, "OVL30BSS")
+static unsigned char rh[TA_END - TA_TOP + 1];   /* (a row's hash, a byte) */
 static unsigned int rd_y, rd_n, rd_first, rd_last, rd_cy, rd_cp, rd_h;
 static unsigned char rd_i, rd_s;
 #pragma bss-name (pop)
@@ -238,6 +240,8 @@ static unsigned char __fastcall__ row_hash(unsigned int y)
     return (unsigned char)(rd_h ^ rd_h >> 8);
 }
 
+static unsigned int rd_gen;
+
 static void redraw_check(void)
 {
     char *p = line;
@@ -250,7 +254,9 @@ static void redraw_check(void)
         rh[rd_y - TA_TOP] = row_hash(rd_y);
     rd_cy = clr_y;
     rd_cp = clr_pg;
+    rd_gen = ai_gen;
     lay_all();                          /* (the whole text wrapped again: a line table the edits left wrong shows too) */
+    ai_gen = rd_gen;                    /* (W68: the check is not a change of the text's) */
     view_all();
     clr_y = rd_cy;
     clr_pg = rd_cp;
@@ -284,10 +290,10 @@ static void e_test_tick(void)
     k = test_log;                       /* (once: the player sets it in the interrupt) */
     if (k & 0x80)
         redraw_check();
-    else if (k >= 0x79 && k < 0x7D) {
+    else if (k >= 0x78 && k < 0x7D) {
         test_log = 0;                   /* (W60: v/ovlclr.c's: the keyboard's setting, the settings logged, */
-        t_arg = k;                      /*  quit and start again) */
-        callb(bank19, sp_tgate);
+        t_arg = k;                      /*  quit and start again; 1.6: $78 the tables, v/tbui.c) */
+        tb_tgate();
     }
     else if (k >= 0x7D) {
         t_arg = k;                      /* (W56: spelling's measurements, v/sppop.c) */

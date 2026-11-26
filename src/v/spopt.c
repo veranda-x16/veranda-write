@@ -177,7 +177,7 @@ void so_close(void)
 /* sp_cfg kept (sp_live from it) and written (t_arg 0: done) */
 void so_save(void)
 {
-    callb(bank22, sp_cfgsave);
+    callb(bank7, sp_cfgsave);
     if (t_arg)
         message("The spelling settings could not be", "written (is the card full?)");
 }
