@@ -33,7 +33,7 @@ unsigned int top_line;
 pos_t s_lo, s_hi;                       /* the selection as drawn */
 unsigned char cur_on;
 static unsigned char blink;             /* cw_jiffies when the cursor was last shown or hidden */
-static unsigned int cx, ch;             /* the cursor as drawn */
+unsigned int cx, ch;                    /* the cursor as drawn (tbview.c's in a table's row) */
 unsigned int cy;                        /* (its top: view2.c's clear_below reads it) */
 /* the cursor's x and its style's ascent and descent, found by draw_row
    when it drew the cursor's line (W43: view_cursor's walk along the line
@@ -88,12 +88,16 @@ void __fastcall__ clip(unsigned char on)
 unsigned char pv_st[(VMAX + 7) / 8];    /* (pages.c's pg_view: which rows start a page) */
 unsigned int pv_pg;
 
+unsigned int tb_hy;                     /* (1.6) the y in the row (a table's: tbview.c's tb_lh) */
+
 unsigned char __fastcall__ view_row(unsigned int y)
 {
     unsigned char i;
     for (i = 0; i < vn; ++i)
-        if (y < vr[i].y + vr[i].l.h)
+        if (y < vr[i].y + vr[i].l.h) {
+            tb_hy = y > vr[i].y ? y - vr[i].y : 0;
             return i;
+        }
     return 0xFF;
 }
 
@@ -161,6 +165,10 @@ void __fastcall__ draw_row(unsigned char i)
     r = &vr[i];
     if (r->y > TA_BOT)
         return;
+    if (IS_TR(&r->l)) {
+        tb_draw(i);                     /* (1.6: a table's row, tbview.c) */
+        return;
+    }
     ps = &par[r->l.p];
     a = r->l.a;
     rr_bt = (r->l.f & LF_FIRST) ? ps->before : 0;
@@ -341,19 +349,23 @@ void view_cursor(unsigned char on)
     if (L < top_line || L >= top_line + vn)
         return;
     i = (unsigned char)(L - top_line);
-    if (cc_cur == cur && cc_pos == vr[i].pos) {
-        cx = cc_x;                      /* (draw_row found it) */
-        a = cc_a;                       /* (W55: not into fl_a and fl_d, which */
-        d = cc_d;                       /*   are fl_last's: word wrap read them) */
-    } else {
-        cx = walk(vr[i].pos, &vr[i].l, 0, cur);
-        a = fl_a;                       /* (walk: the style at the cursor) */
-        d = fl_d;
+    if (IS_TR(&vr[i].l))
+        tb_cpos(i);                     /* (1.6: in a table's row: cx, cy, ch) */
+    else {
+        if (cc_cur == cur && cc_pos == vr[i].pos) {
+            cx = cc_x;                  /* (draw_row found it) */
+            a = cc_a;                   /* (W55: not into fl_a and fl_d, which */
+            d = cc_d;                   /*   are fl_last's: word wrap read them) */
+        } else {
+            cx = walk(vr[i].pos, &vr[i].l, 0, cur);
+            a = fl_a;                   /* (walk: the style at the cursor) */
+            d = fl_d;
+        }
+        cy = vr[i].y + vr[i].l.a - a;
+        ch = a + d;
     }
     if (cx > PG_R - 2)
         cx = PG_R - 2;
-    cy = vr[i].y + vr[i].l.a - a;
-    ch = a + d;
     if (cy + ch - 1 > TA_BOT)
         return;
     clip(1);
@@ -399,12 +411,6 @@ unsigned char pg_buf[36 * LT_SZ];       /* (pages.c's window of the line table: 
   the rest of the view: overlay 5 (view2.c), through these
  ---------------------------------------------------------------*/
 int v_n;
-void view_all(void) { callb(bank5, v_all); }
-void view_frame(void) { callb(bank5, v_frame); }
-void view_refresh(void) { callb(bank5, v_refresh); }
-
-void view_title(void) { callb(bank5, v_title); }
-void view_status(void) { callb(bank8, t_status); }
-void view_toolbar(void) { callb(bank12, t_toolbar); }
-void view_fix_cursor(void) { callb(bank5, v_fix_cursor); }
+/* (view_all, view_frame, view_refresh, view_title, view_status,
+   view_toolbar, view_fix_cursor: glue.s's far calls, 7 bytes each, 1.6) */
 void __fastcall__ view_scroll(int n) { v_n = n; callb(bank5, v_scroll); }

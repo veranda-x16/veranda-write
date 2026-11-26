@@ -48,6 +48,12 @@ def esc(t):
 
 
 # ---------------------------------------------------------------- .docx
+# (1.6) the fixtures' table's codes, in order: each paragraph's (its
+# number among the table's paragraphs: from 0), kind, argument
+TCODES = [[0, 0x14, 0], [0, 0x15, 56], [1, 0x15, 85], [2, 0x16, 0], [3, 0x15, 113],
+          [4, 0x14, 0], [4, 0x15, 141], [5, 0x16, 0], [6, 0x16, 0], [7, 0x15, 113]]
+
+
 def run(t, b=False, i=False, u=False, sz=None, font=None):
     rp = ''
     if font:
@@ -142,13 +148,22 @@ def docx_features(path):
     body.append(para(run('Code in its style'), 'Code'))
     exp.append({'kind': 0, 'text': 'Code in its style', 'runs': [['Code', 'mono', 10]]})
     # a table, a picture, a text box, a footnote, a comment, tracked changes, a field, a formula
-    rows = ''.join('<w:tr><w:trPr><w:trHeight w:val="300"/></w:trPr>%s</w:tr>' % ''.join(
-        '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>%s</w:tc>' % para(run('r%dc%d' % (r, c)))
-        for c in range(3)) for r in range(2))
-    body.append('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="0" w:type="auto"/></w:tblPr>'
-                '<w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>%s</w:tbl>' % rows)
-    exp.append({'kind': 0, 'text': 'r0c0\tr0c1\tr0c2'})
-    exp.append({'kind': 0, 'text': 'r1c0\tr1c1\tr1c2'})
+    # (1.6) a table kept: a grid of 2000, 3000 and 4000 twips (256ths of
+    # the text's 9072: 56, 85, 113), a cell of two paragraphs, one over two
+    # columns with a table in it (its text the cell's, counted), an empty one
+    def tc(content, span=0):
+        return '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>%s</w:tcPr>%s</w:tc>' % (
+            '<w:gridSpan w:val="%d"/>' % span if span else '', content)
+    nested = ('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+              '<w:tr><w:tc>%s</w:tc></w:tr></w:tbl>' % para(run('nested')))
+    rows = ('<w:tr><w:trPr><w:trHeight w:val="300"/></w:trPr>%s</w:tr>' % (
+                tc(para(run('r0c0'))) + tc(para(run('r0c1')) + para(run('second'))) + tc(para(run('r0c2')))) +
+            '<w:tr>%s</w:tr>' % (tc(para(run('r1c0')) + nested + '<w:p/>', 2) + tc('<w:p/>')))
+    body.append('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:jc w:val="center"/><w:tblW w:w="0" w:type="auto"/>'
+                '<w:tblBorders><w:top w:val="single" w:sz="4"/></w:tblBorders></w:tblPr>'
+                '<w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="3000"/><w:gridCol w:w="4000"/></w:tblGrid>%s</w:tbl>' % rows)
+    for t in ('r0c0', 'r0c1', 'second', 'r0c2', 'r1c0', 'nested', '', ''):
+        exp.append({'kind': 0, 'text': t, **({'lo': 0} if not t else {})})
     pic = ('<w:r><w:drawing><wp:inline distT="0"><wp:extent cx="100" cy="100"/><wp:docPr id="1" name="Picture 1"/>'
            '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
            '<pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="p.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId20"/></pic:blipFill>'
@@ -203,7 +218,7 @@ def docx_features(path):
     return {'paras': exp, 'page': {'paper': 1, 'top': 1440, 'bottom': 1440, 'left': 1800, 'right': 1800,
                                    'head': 'Veranda|Test|Zażółć', 'foot': 'Page {page} of {pages}', 'flags': 1},
             'counts': {'tables': 1, 'pics': 2, 'boxes': 1, 'notes': 1, 'comments': 1, 'changes': 2, 'lost': 2,
-                       'fields': 0}, 'pbreaks': 3}
+                       'fields': 0}, 'pbreaks': 3, 'tcodes': TCODES}
 
 
 def write_docx(path, doc, styles=None, num=None, rels=None, extra=()):
@@ -302,6 +317,9 @@ def odt_auto():
             '<style:style style:name="P4" style:family="paragraph" style:parent-style-name="Text_20_body"><style:paragraph-properties fo:text-align="justify"/></style:style>'
             '<style:style style:name="P5" style:family="paragraph" style:parent-style-name="Text_20_body"><style:paragraph-properties fo:break-before="page"/></style:style>'
             '<style:style style:name="P6" style:family="paragraph" style:parent-style-name="Text_20_body"><style:paragraph-properties fo:margin-left="1.27cm" fo:text-indent="-0.635cm"/></style:style>'
+            '<style:style style:name="Table1.A" style:family="table-column"><style:table-column-properties style:column-width="1.3889in"/></style:style>'
+            '<style:style style:name="Table1.B" style:family="table-column"><style:table-column-properties style:column-width="2.0833in"/></style:style>'
+            '<style:style style:name="Table1.C" style:family="table-column"><style:table-column-properties style:column-width="2.7778in"/></style:style>'
             '<style:style style:name="T1" style:family="text"><style:text-properties fo:font-weight="bold" style:font-weight-asian="bold"/></style:style>'
             '<style:style style:name="T2" style:family="text"><style:text-properties fo:font-style="italic"/></style:style>'
             '<style:style style:name="T3" style:family="text"><style:text-properties style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color"/></style:style>'
@@ -355,12 +373,23 @@ def odt_features(path):
     exp.append({'kind': 0, 'text': 'A new page by its style'})
     b.append(tp('Code in its style', 'Preformatted_20_Text'))
     exp.append({'kind': 0, 'text': 'Code in its style', 'runs': [['Code', 'mono', 10]]})
-    rows = ''.join('<table:table-row>%s</table:table-row>' % ''.join(
-        '<table:table-cell office:value-type="string">%s</table:table-cell>' % tp('r%dc%d' % (r, c), 'Table_20_Contents')
-        for c in range(3)) for r in range(2))
-    b.append('<table:table table:name="Table1" table:style-name="Table1"><table:table-column table:number-columns-repeated="3"/>%s</table:table>' % rows)
-    exp.append({'kind': 0, 'text': 'r0c0\tr0c1\tr0c2'})
-    exp.append({'kind': 0, 'text': 'r1c0\tr1c1\tr1c2'})
+    # (1.6) the same table: its columns' styles' widths, a cell over two
+    # columns (and the covered one), a table in it, an empty cell
+    cell = '<table:table-cell office:value-type="string"%s>%s</table:table-cell>'
+    nested = ('<table:table table:name="Table2"><table:table-column/><table:table-row>%s</table:table-row></table:table>'
+              % (cell % ('', tp('nested'))))
+    rows = ('<table:table-row>%s</table:table-row>' % (
+                cell % ('', tp('r0c0', 'Table_20_Contents')) +
+                cell % ('', tp('r0c1', 'Table_20_Contents') + tp('second', 'Table_20_Contents')) +
+                cell % ('', tp('r0c2', 'Table_20_Contents'))) +
+            '<table:table-row>%s</table:table-row>' % (
+                cell % (' table:number-columns-spanned="2"', tp('r1c0', 'Table_20_Contents') + nested + tp('')) +
+                '<table:covered-table-cell/>' + cell % ('', tp(''))))
+    b.append('<table:table table:name="Table1" table:style-name="Table1"><table:table-column table:style-name="Table1.A"/>'
+             '<table:table-column table:style-name="Table1.B"/><table:table-column table:style-name="Table1.C"/>%s</table:table>'
+             % rows)
+    for t in ('r0c0', 'r0c1', 'second', 'r0c2', 'r1c0', 'nested', '', ''):
+        exp.append({'kind': 0, 'text': t, **({'lo': 0} if not t else {})})
     b.append(tp('Picture:<draw:frame draw:name="Image1" text:anchor-type="as-char" svg:width="1cm" svg:height="1cm"><draw:image xlink:href="Pictures/1.png"/></draw:frame>'
                 ' box:<draw:frame draw:name="Frame1"><draw:text-box>%s</draw:text-box></draw:frame>'
                 ' note<text:note text:id="ftn1" text:note-class="footnote"><text:note-citation>1</text:note-citation><text:note-body>%s</text:note-body></text:note>'
@@ -378,7 +407,7 @@ def odt_features(path):
     return {'paras': exp, 'page': {'paper': 0, 'top': 1417, 'bottom': 850 + 283, 'left': 1417, 'right': 1417,
                                    'head': 'Header of Zażółć', 'foot': 'Page {page}/{pages}|right', 'flags': 1},
             'counts': {'tables': 1, 'pics': 1, 'boxes': 1, 'notes': 1, 'comments': 1, 'changes': 2, 'lost': 2},
-            'pbreaks': 1}
+            'pbreaks': 1, 'tcodes': TCODES}
 
 
 def write_odt(path, content, styles):

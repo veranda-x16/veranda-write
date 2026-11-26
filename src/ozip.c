@@ -121,6 +121,83 @@ unsigned char FASTCALL oz_open(unsigned char h)
 /*---------------------------------------------------------------
   inflate's state: the bits, the tables, a block
  ---------------------------------------------------------------*/
+#ifndef CW_HOST
+/* (W71) the codes read by v/oinf.s: its bit buffer (zhold), ZBUF's
+   place (zi, zn), the block's state; the tables a code's length found
+   by (llim: the first code past the length's; ldel: its symbols' place
+   less its first code; dlim, ddel the distances') */
+#define ST_HEAD 0
+#define ST_STORED 1
+#define ST_CODES 2
+#define ST_DONE 3
+extern unsigned char zi, zn, zhold, zerr, zst, zlast;
+extern unsigned char *zo, *zfl, *ze;
+extern unsigned int zclen, zcdist;
+void zcodes(void);
+unsigned int FASTCALL zbits(unsigned char n);
+int zdec_d(void);
+unsigned char zgetb(void);
+unsigned int FASTCALL zcopy(unsigned int n);
+#define st zst
+#define last zlast
+#define ierr zerr
+#define clen zclen
+static unsigned int blk;                /* a stored block's bytes left */
+unsigned int llim[16], ldel[16], dlim[16], ddel[16];
+unsigned char lsym[288], lhi[36], dsym[32];
+static unsigned char lens[320];
+
+/* (v/oinf.s's, ZBUF read through) ZBUF's next bytes; 0: none */
+unsigned char zfill(void)
+{
+    zn = z_left > ZBUFN ? ZBUFN : (unsigned char)z_left;
+    if (!zn || ZREAD(ZBUF, zn) != zn) {
+        ierr = 1;
+        zn = 0;
+        return 0;
+    }
+    z_left -= zn;
+    zi = 0;
+    return zn;
+}
+#define inb() zgetb()
+#define bits(n) zbits(n)
+
+/* the symbols of the code lengths at lens + base, in order (s; their
+   ninth bits hi, or none), the tables of each length (lim, del) */
+static void build(unsigned int *lim, unsigned int *del, unsigned char *s, unsigned char *hi, unsigned int base,
+                  unsigned int n)
+{
+    static unsigned int c[16], offs[16], i, o, code;
+    static unsigned char l;
+    memset(c, 0, sizeof c);
+    if (hi)
+        memset(hi, 0, 36);
+    for (i = 0; i < n; ++i)
+        ++c[lens[base + i]];
+    c[0] = 0;
+    offs[1] = 0;
+    for (l = 1; l < 15; ++l)
+        offs[l + 1] = offs[l] + c[l];
+    for (i = 0; i < n; ++i)
+        if ((l = lens[base + i]) != 0) {
+            o = offs[l]++;
+            s[o] = (unsigned char)i;
+            if (i > 255)
+                hi[o >> 3] |= 1 << (o & 7);
+        }
+    /* (offs moved on by the counts: each length's first place is offs - c) */
+    code = 0;
+    for (l = 1; l < 16; ++l) {
+        lim[l] = code + c[l];
+        del[l] = offs[l] - c[l] - code;
+        code = (code + c[l]) << 1;
+    }
+}
+#define dcode_d() zdec_d()
+#define BUILD_L(base, n) build(llim, ldel, lsym, lhi, base, n)
+#define BUILD_D(base, n) build(dlim, ddel, dsym, 0, base, n)
+#else
 static unsigned int zi, zn;             /* ZBUF's bytes: the next, there are */
 static unsigned char bb, bc;            /* the bit buffer, its bits */
 static unsigned char st, last;          /* the state (below), the last block */
@@ -220,6 +297,11 @@ static void build(unsigned int *c, unsigned char *s, unsigned char *hi, unsigned
         }
 }
 
+#define dcode_d() dcode(dcnt, dsym, 0)
+#define BUILD_L(base, n) build(lcnt, lsym, lhi, base, n)
+#define BUILD_D(base, n) build(dcnt, dsym, 0, base, n)
+#endif
+
 static const unsigned char clo[19] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
 
 static void tables(unsigned char dyn)
@@ -232,9 +314,9 @@ static void tables(unsigned char dyn)
         memset(lens + 144, 9, 112);
         memset(lens + 256, 7, 24);
         memset(lens + 280, 8, 8);
-        build(lcnt, lsym, lhi, 0, 288);
+        BUILD_L(0, 288);
         memset(lens, 5, 30);
-        build(dcnt, dsym, 0, 0, 30);
+        BUILD_D(0, 30);
         return;
     }
     nl = bits(5) + 257;
@@ -247,9 +329,9 @@ static void tables(unsigned char dyn)
     memset(lens, 0, 19);
     for (i = 0; i < nc; ++i)
         lens[clo[i]] = (unsigned char)bits(3);
-    build(dcnt, dsym, 0, 0, 19);
+    BUILD_D(0, 19);
     for (i = 0; i < nl + nd && !ierr;) {
-        sym = dcode(dcnt, dsym, 0);
+        sym = dcode_d();
         if (sym < 0)
             return;
         if (sym < 16) {
@@ -275,10 +357,11 @@ static void tables(unsigned char dyn)
         memset(lens + i, v, r);
         i += r;
     }
-    build(lcnt, lsym, lhi, 0, nl);
-    build(dcnt, dsym, 0, nl, nd);
+    BUILD_L(0, nl);
+    BUILD_D(nl, nd);
 }
 
+#ifdef CW_HOST
 static const unsigned int lbase[29] = { 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51,
                                         59, 67, 83, 99, 115, 131, 163, 195, 227, 258 };
 static const unsigned char lext[29] = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4,
@@ -288,6 +371,7 @@ static const unsigned int dbase[30] = { 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49,
 static const unsigned char dext[30] = { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
                                         11, 11, 12, 12, 13, 13 };
 
+#endif
 /*---------------------------------------------------------------
   a part
  ---------------------------------------------------------------*/
@@ -348,7 +432,11 @@ unsigned char FASTCALL oz_part(const char *name)
             ++wbanks;
         }
     zi = zn = 0;
+#ifdef CW_HOST
     bc = 0;
+#else
+    zhold = 0;
+#endif
     st = ST_HEAD;
     last = 0;
     clen = 0;
@@ -358,6 +446,73 @@ unsigned char FASTCALL oz_part(const char *name)
     return oz_err = 0;
 }
 
+#ifndef CW_HOST
+/* (W71) the codes' blocks by v/oinf.s's zcodes; the stored blocks and
+   the headers here */
+unsigned int FASTCALL oz_read(unsigned char *dst, unsigned int n)
+{
+    static unsigned int x;
+    static unsigned char t;
+    if (!z_open)
+        return 0;
+    if (z_meth == 0) {
+        if (n > z_left)
+            n = (unsigned int)z_left;
+        if (!n)
+            return 0;
+        if (ZREAD(dst, n) != n) {
+            oz_err = OZ_IO;
+            return 0;
+        }
+        z_left -= n;
+        return n;
+    }
+    zo = zfl = dst;
+    ze = dst + n;
+    while (zo < ze && !ierr && st != ST_DONE) {
+        if (clen || st == ST_CODES) {
+            zcodes();
+            continue;
+        }
+        if (st == ST_STORED) {
+            if (!blk) {
+                st = last ? ST_DONE : ST_HEAD;
+                continue;
+            }
+            blk -= zcopy(blk);          /* (v/oinf.s: to zo, as far as ze) */
+            continue;
+        }
+        /* a block's header */
+        last = (unsigned char)bits(1);
+        t = (unsigned char)bits(2);
+        if (t == 0) {
+            zhold = 0;                  /* (a stored block starts at a byte) */
+            blk = inb();
+            blk |= inb() << 8;
+            x = inb();
+            x |= inb() << 8;
+            if ((x ^ 0xFFFFU) != blk)      /* (W71: ~x on the host is 32 bits: a stored block refused) */
+                ierr = 1;
+            st = ST_STORED;
+        } else if (t == 3)
+            ierr = 1;
+        else {
+            tables(t == 2);
+            st = ST_CODES;
+        }
+    }
+    if (zo != zfl) {
+        ow_src = zfl;
+        ow_n = (unsigned int)(zo - zfl);
+        ow_flush();
+    }
+    if (ierr) {
+        oz_err = OZ_BAD;
+        z_open = 0;
+    }
+    return (unsigned int)(zo - dst);
+}
+#else
 /* the window: the literals since fl (dst's) written to it */
 static unsigned char *fl;
 static unsigned char *FASTCALL flush(unsigned char *o)
@@ -451,7 +606,7 @@ unsigned int FASTCALL oz_read(unsigned char *dst, unsigned int n)
             blk |= inb() << 8;
             x = inb();
             x |= inb() << 8;
-            if ((unsigned int)~x != blk)
+            if ((x ^ 0xFFFFU) != blk)      /* (W71: ~x on the host is 32 bits: a stored block refused) */
                 ierr = 1;
             st = ST_STORED;
         } else if (t == 3)
@@ -468,6 +623,8 @@ unsigned int FASTCALL oz_read(unsigned char *dst, unsigned int n)
     }
     return (unsigned int)(o - dst);
 }
+
+#endif
 
 #ifdef CW_HOST
 /* the window on the host: the banks' arrays */

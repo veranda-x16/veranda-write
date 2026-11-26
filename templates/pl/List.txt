@@ -1,0 +1,29 @@
+# Szablon Veranda Write: list
+@lang pl
+@file List
+>[Imię i nazwisko]
+>[Ulica i numer]
+>[Kod pocztowy i miejscowość]
+>[Telefon, e-mail]
+
+>[Miejscowość], {date}
+
+[Imię i nazwisko adresata]
+[Firma]
+[Ulica i numer]
+[Kod pocztowy i miejscowość]
+
+**Dotyczy: [temat listu]**
+
+Szanowni Państwo,
+
+[Pierwszy akapit: w jakiej sprawie piszę.]
+
+[Drugi akapit: szczegóły.]
+
+[Ostatni akapit: czego oczekuję.]
+
+Z poważaniem
+
+
+[Imię i nazwisko]

@@ -1,0 +1,116 @@
+--- a/src/main.c	2026-09-03 19:40:57.413649539 -0700
++++ b/src/main.c	2026-11-25 19:44:03.888215054 -0800
+@@ -6,6 +6,7 @@
+ #define _XOPEN_SOURCE   600
+ #define _POSIX_C_SOURCE 1
+ #endif
++#define PROF_N (0xA000 + 256 * 0x2000 + 0x4000 * 64)
+ #include <stdlib.h>
+ #include <stdbool.h>
+ #include <stdint.h>
+@@ -286,9 +287,38 @@
+ }
+ #endif
+ 
++static uint32_t *prof_h;
++int prof_on = 1;
++static uint8_t prof_snap[256 * 8192], prof_seen[256];
++static uint16_t pf_pc[512], pf_sp[512];
++static uint8_t pf_bank[512];
++static int pf_n;
++static uint8_t prof_lib[65536];
++static void prof_libinit(void)
++{
++	const char *e = getenv("X16PROF_LIB");
++	while (e && *e) {
++		unsigned lo, hi; int n = 0;
++		if (sscanf(e, "%x-%x%n", &lo, &hi, &n) != 2) break;
++		for (unsigned a = lo; a < hi && a < 65536; a++) prof_lib[a] = 1;
++		e += n;
++		if (*e == ',') e++;
++	}
++}
++static void prof_write(void)
++{
++	const char *fn = getenv("X16PROF");
++	if (!fn || !prof_h) return;
++	FILE *f = fopen(fn, "wb");
++	if (f) { fwrite(prof_h, 4, PROF_N, f); fclose(f); }
++	char bn[512]; snprintf(bn, sizeof bn, "%s.banks", fn);
++	f = fopen(bn, "wb");
++	if (f) { fwrite(prof_snap, 1, 256 * 8192, f); fclose(f); }
++}
+ void
+ machine_dump(const char* reason)
+ {
++	prof_write();
+ 	printf("Dumping system memory. Reason: %s\n", reason);
+ 	int index = 0;
+ 	char filename[22];
+@@ -614,6 +644,7 @@
+ int
+ main(int argc, char **argv)
+ {
++	if (getenv("X16PROF")) { prof_h = calloc(PROF_N, 4); prof_libinit(); if (getenv("X16PROF_FROM")) prof_on = 0; }
+ 	char *rom_filename = "rom.bin";
+ 	char rom_path_data[PATH_MAX];
+ 
+@@ -1732,8 +1763,32 @@
+ 
+ 		instruction_counter += waiting ^ 0x1;
+ 
++		uint16_t prof_pc = regs.pc;
++		uint8_t prof_op = prof_h ? debug_read6502(prof_pc, 0, -1) : 0;
++		uint8_t prof_bk = memory_get_ram_bank();
+ 		step6502();
+ 		uint32_t clocks = clockticks6502 - old_clockticks6502;
++		if (prof_h) {
++			uint16_t apc = prof_pc;
++			uint8_t abk = prof_bk;
++			while (pf_n && pf_sp[pf_n - 1] < (regs.sp & 0xFF))
++				--pf_n;
++			if (prof_lib[prof_pc]) {
++				for (int k = pf_n - 1; k >= 0; --k)
++					if (!prof_lib[pf_pc[k]]) { apc = pf_pc[k]; abk = pf_bank[k]; break; }
++			}
++			if (prof_op == 0x20 && pf_n < 512) {
++				pf_pc[pf_n] = prof_pc; pf_bank[pf_n] = prof_bk; pf_sp[pf_n] = regs.sp & 0xFF; ++pf_n;
++			}
++			uint32_t ix = apc < 0xA000 ? apc : apc < 0xC000 ? 0xA000 + abk * 0x2000u + (apc - 0xA000)
++				: 0xA000 + 256 * 0x2000u + (memory_get_rom_bank() & 63) * 0x4000u + (apc - 0xC000);
++			if (prof_on) prof_h[ix] += clocks;
++			if (prof_pc >= 0xA000 && prof_pc < 0xC000 && !prof_seen[memory_get_ram_bank()]) {
++				uint8_t b = memory_get_ram_bank();
++				prof_seen[b] = 1;
++				for (int a = 0; a < 8192; a++) prof_snap[b * 8192 + a] = debug_read6502(0xA000 + a, 0, b);
++			}
++		}
+ 		old_clockticks6502 = clockticks6502;
+ 		bool new_frame = false;
+ 		via1_step(clocks);
+--- a/src/memory.c	2026-08-18 23:37:51.861876470 -0700
++++ b/src/memory.c	2026-11-25 20:08:31.258750454 -0800
+@@ -533,6 +533,23 @@
+ 		case 9: printf("User debug 1: $%02x\n", value); fflush(stdout); break;
+ 		case 10: printf("User debug 2: $%02x\n", value); fflush(stdout); break;
+ 		case 11: {
++			{
++				static char lb[64]; static int ln;
++				extern int prof_on;
++				if (value == 0x0a || value == 0x0d || value == 0x20) {
++					lb[ln] = 0;
++					if (ln > 0 && (prof_on ? getenv("X16PROF_TO") : getenv("X16PROF_FROM"))) {
++						static int last_mark;
++						{
++							const char *w = prof_on ? getenv("X16PROF_TO") : getenv("X16PROF_FROM");
++							if (w[0] == '@' ? !strcmp(lb, w + 1) : last_mark && !strcmp(lb, w)) prof_on = !prof_on;
++						}
++						last_mark = 0;
++						if (!strcmp(lb, "MARK")) last_mark = 1;
++					}
++					ln = 0;
++				} else if (ln < 63) lb[ln++] = value;
++			}
+ 			if (value == 0x09 || value == 0x0a || value == 0x0d || (value >= 0x20 && value < 0x7f)) {
+ 				printf("%c", value);
+ 			} else if (value >= 0xa1) {

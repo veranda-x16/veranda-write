@@ -25,7 +25,8 @@ w:commentReference w:del w:moveFrom w:ins w:moveTo w:pPrChange w:rPrChange w:sec
 w:tblPrChange w:fldChar w:instrText w:fldSimple w:tbl w:tr w:tc w:tblPr w:tblGrid w:trPr w:tcPr
 w:sdtPr w:sdtEndPr w:docDefaults w:latentStyles w:style w:name w:basedOn w:abstractNum w:lvl
 w:numFmt w:num w:abstractNumId w:lvlOverride Relationship w:hdr w:ftr w:vanish w:delInstrText
-w:rPrDefault w:pPrDefault w:background w:fldData w:delText'''.split()
+w:rPrDefault w:pPrDefault w:background w:fldData w:delText w:gridCol w:gridSpan w:tblBorders w:top
+w:tcBorders w:tblCellMar'''.split()
 DOCX_A = '''w:val w:type w:left w:start w:right w:end w:firstLine w:hanging w:before w:after w:line
 w:lineRule w:w w:h w:top w:bottom r:id w:styleId w:default w:ascii w:hAnsi w:fldCharType w:instr
 w:abstractNumId w:numId w:ilvl Id Type Target'''.split()
@@ -42,7 +43,8 @@ text:table-of-content-source text:alphabetical-index-source text:illustration-in
 text:index-title-template office:forms text:sequence-decls text:variable-decls
 text:user-field-decls style:header-footer-properties text:changed-region office:font-face-decls
 style:header-style style:footer-style text:bibliography-source text:object-index-source
-text:user-index-source text:table-index-source'''.split()
+text:user-index-source text:table-index-source table:table-column style:table-column-properties
+style:table-cell-properties'''.split()
 ODT_A = '''style:name style:family style:parent-style-name style:display-name
 style:default-outline-level style:list-style-name style:master-page-name style:page-layout-name
 fo:text-align fo:margin-left fo:margin-right fo:margin-top fo:margin-bottom fo:text-indent
@@ -50,22 +52,25 @@ fo:line-height fo:break-before fo:break-after fo:font-weight fo:font-style fo:fo
 style:font-name fo:font-family style:text-underline-style fo:page-width fo:page-height
 text:style-name text:outline-level text:c fo:min-height svg:font-family style:font-pitch
 style:font-family-generic fo:margin style:text-underline-type style:font-size-asian
-style:font-name-complex'''.split()
+style:font-name-complex table:style-name table:number-columns-repeated table:number-columns-spanned
+style:column-width fo:border fo:border-top'''.split()
 # the elements whose attributes a reader reads (the others' are passed
 # over without a look: a bitmap by the element's number)
 DOCX_AW = '''w:pStyle w:jc w:ind w:spacing w:numId w:pageBreakBefore w:outlineLvl w:type w:pgSz w:pgMar
 w:headerReference w:footerReference w:titlePg w:rStyle w:b w:i w:u w:sz w:rFonts w:br w:fldChar w:fldSimple
-w:style w:name w:basedOn w:abstractNum w:lvl w:numFmt w:num w:abstractNumId Relationship w:vanish'''.split()
+w:style w:name w:basedOn w:abstractNum w:lvl w:numFmt w:num w:abstractNumId Relationship w:vanish
+w:gridCol w:gridSpan w:top'''.split()
 ODT_AW = '''style:style style:default-style style:paragraph-properties style:text-properties style:page-layout
 style:page-layout-properties style:master-page style:header-footer-properties style:font-face text:list-style
-text:list text:p text:h text:span text:s'''.split()
+text:list text:p text:h text:span text:s table:table-column table:table-cell style:table-column-properties
+style:table-cell-properties'''.split()
 # names the readers do not know, which must not be taken for one
 OTHER = '''w:document w:body w:lang w:szCs w:bCs w:iCs w:color w:kern w:noProof w:proofErr w:bookmarkStart
 w:bookmarkEnd w:lastRenderedPageBreak w:rtl w:keepNext w:keepLines w:widowControl w:contextualSpacing
 w:highlight w:shd w:vertAlign w:strike w:dstrike w:caps w:smallCaps w:spacingCs w:w w:position
 w:eastAsianLayout w:specVanish w:oMath w:snapToGrid w:adjustRightInd w:autoSpaceDE w:autoSpaceDN
 w:textAlignment w:suppressAutoHyphens w:hyperlink w:smartTag w:customXml w:sdt w:sdtContent
-w:tblW w:tblInd w:tblBorders w:tblLayout w:tblCellMar w:tblLook w:gridCol w:tcW w:vAlign w:gridSpan
+w:tblW w:tblInd w:tblBorders w:tblLayout w:tblLook w:gridCol w:tcW w:vAlign w:gridSpan
 w:vMerge w:tblHeader w:trHeight w:cols w:docGrid w:pgNumType w:formProt w:textDirection w:bidi
 w:rsid w:rsidR w:rsidRPr w:rsidRDefault w:rsidP w:paraId w:textId w14:paraId w14:textId
 w:uiPriority w:qFormat w:semiHidden w:unhideWhenUsed w:link w:next w:autoRedefine w:locked

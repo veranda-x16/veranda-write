@@ -34,12 +34,13 @@ static const struct ntab te = NTAB(ode), ta = NTAB(oda);
 
 #define OD_STY 1
 #define OD_DOC 2
-static unsigned char part, skipd, skipk, boxseen, e, ctx, inbody, tdepth, cellc, cellp, lastsp, firstp;
+static unsigned char part, skipd, skipk, boxseen, e, ctx, inbody, tdepth, lastsp, firstp;
 static unsigned char a_fam, a_ol, a_ls, a_mp, a_n, hfk, inmaster, gotm, hfirst, firstmp;
 #define CX_P 1                          /* paragraph-properties */
 #define CX_T 2                          /* text-properties */
 #define CX_L 3                          /* page-layout-properties */
 #define CX_H 4                          /* header-footer-properties */
+#define CX_C 5                          /* (1.6) table-column-properties, table-cell-properties */
 #define SK_PIC 1
 #define SK_BOX 2
 static unsigned char tp, cst;           /* (pr_t's while properties are read; a style being defined) */
@@ -55,6 +56,29 @@ static unsigned char ff_m[NFF];
 static unsigned char lsn, ls_cur;
 static unsigned int ls_h[NLS];
 static unsigned char ls_k[NLS];
+/* (1.6) the table-column styles' widths (twips), the table-cell styles'
+   borders (TR_NOGRID: none): their names' hashes */
+#define NTS 16
+static unsigned char tsn, a_r, cellc;
+static unsigned int ts_h[NTS], ts_v[NTS], ts_cur;
+
+static unsigned int FASTCALL ts_get(unsigned int h)
+{
+    static unsigned char i;
+    for (i = 0; i < tsn; ++i)
+        if (ts_h[i] == h)
+            return ts_v[i];
+    return 0;
+}
+
+static void FASTCALL ts_put(unsigned int v)
+{
+    if (tsn < NTS) {
+        ts_h[tsn] = ts_cur;
+        ts_v[tsn++] = v;
+    }
+}
+
 /* the lists open (their kinds), the spans open (their styles) */
 #define NDEP 6
 static unsigned char ld, lst[NDEP], initem;
@@ -162,13 +186,9 @@ static unsigned int FASTCALL pct(const char *s)
    (a style's list only for a list's paragraphs: the format's rule) */
 static void FASTCALL para(unsigned char h)
 {
-    if (tdepth) {
-        if (cellp++)
-            em_char(' ');
-        tgt(PT_NONE);
-        return;
-    }
     em_par();
+    if (tdepth)
+        em_tbl(tdepth == 1 ? TB_PARA : TB_NEST, 0);   /* (1.6: a cell's: oemit.c's em_tbl) */
     em_rs = 0xFF;
     pr_clr(PT_RUN);
     em_run();
@@ -185,6 +205,7 @@ static void start(void)
     a_n = 1;
     a_h = a_par = a_lay = 0;
     a_fam = a_ol = a_ls = 0;
+    a_r = 1;
     a_mp = a_k = P_NO;
     switch (e) {
     case ODE_office_text:
@@ -210,6 +231,9 @@ static void start(void)
     case ODE_style_header_footer_properties:
         ctx = CX_H;
         break;
+    case ODE_style_table_column_properties: case ODE_style_table_cell_properties:
+        ctx = CX_C;                     /* (1.6: a column's width, a cell's borders) */
+        break;
     case ODE_style_header_style:
         hfs = 6;
         break;
@@ -228,7 +252,7 @@ static void start(void)
         break;
     case ODE_text_line_break:
         if (inbody || hfk) {
-            if (tdepth || hfk)
+            if (hfk)
                 em_char(' ');
             else
                 em_split();
@@ -269,23 +293,17 @@ static void start(void)
         }
         break;
     case ODE_table_table:
-        if (inbody && !tdepth)
-            ++oxc.tables;
-        ++tdepth;
+        /* (1.6) a table kept: its rows' paragraphs (a table in a cell: its
+           text the cell's, counted) */
+        if (tdepth++) {
+            if (inbody)
+                ++oxc.tables;
+        } else
+            em_tbl(TB_START, 0);
         break;
     case ODE_table_table_row:
-        if (tdepth == 1 && inbody) {
-            em_par();
-            cellc = 0;
-        } else if (tdepth > 1)
-            em_char(' ');
-        break;
-    case ODE_table_table_cell:
-        if (tdepth == 1 && cellc++)
-            em_char(CH_TAB);
-        else if (tdepth > 1)
-            em_char(' ');
-        cellp = 0;
+        if (tdepth == 1)
+            em_tbl(TB_ROW, cellc = 0);
         break;
     case ODE_table_covered_table_cell:
         skip(0);
@@ -319,7 +337,7 @@ static void attr(void)
     static unsigned char a, i;
     static int v;
     static unsigned int u;
-    if (!(ode_aw[e >> 3] & (1 << (e & 7))))
+    if (!(ode_aw[e >> 3] & obit[e & 7]))
         return;                         /* (its attributes not read) */
     a = nlook(&ta);
     if (!a)
@@ -334,7 +352,15 @@ static void attr(void)
         a_h = hash(XVAL);
         return;
     case ODA_style_family:
-        a_fam = XVAL[0] == 'p' ? 1 : XVAL[0] == 't' && XVAL[1] == 'e' ? 2 : 0;
+        a_fam = XVAL[0] == 'p' ? 1 : XVAL[0] == 't' && XVAL[1] == 'e' ? 2
+              : !memcmp(XVAL, "table-c", 7) ? 3 : 0;   /* (1.6: table-column, table-cell) */
+        return;
+    case ODA_table_style_name:          /* (1.6) */
+        a_h = hash(XVAL);
+        return;
+    case ODA_table_number_columns_repeated: case ODA_table_number_columns_spanned:
+        v = onum(XVAL);
+        a_r = v < 1 ? 1 : v > 16 ? 16 : (unsigned char)v;
         return;
     case ODA_style_parent_style_name:
         a_par = hash(XVAL);
@@ -370,6 +396,14 @@ static void attr(void)
     case ODA_style_font_pitch:
         if (e == ODE_style_font_face && XVAL[0] == 'f')
             a_n = 0;
+        return;
+    }
+    if (ctx == CX_C) {
+        /* (1.6) a column style's width; a cell style's borders */
+        if (a == ODA_style_column_width)
+            ts_put(olen(XVAL));
+        else if (a == ODA_fo_border || a == ODA_fo_border_top)
+            ts_put(XVAL[0] == 'n' ? TR_NOGRID : 0);
         return;
     }
     if (ctx == CX_L || ctx == CX_H) {
@@ -472,6 +506,7 @@ static void attr(void)
 static void open(void)
 {
     static unsigned char i;
+    static unsigned int w;
     switch (e) {
     case ODE_style_font_face:
         if (ffn < NFF) {
@@ -482,6 +517,10 @@ static void open(void)
     case ODE_style_style:
         cst = 0;
         tgt(PT_NONE);
+        if (a_fam == 3) {
+            ts_cur = a_h;               /* (1.6: a table column's or cell's style) */
+            return;
+        }
         if (!a_fam || st_new(a_h) == 0xFF) {
             skip(0);                    /* (a table's, a frame's ...) */
             return;
@@ -542,10 +581,21 @@ static void open(void)
             ++mpn;
         }
         return;
+    case ODE_table_table_column:        /* (1.6) its width, a_r times */
+        if (tdepth == 1)
+            for (w = ts_get(a_h); a_r--;)
+                em_tbl(TB_COL, w);
+        return;
+    case ODE_table_table_cell:
+        if (tdepth == 1) {
+            em_tbl(TB_CELL, 0);
+            em_tbl(TB_SPAN, a_r);
+            if (!cellc++)
+                em_tbl(TB_BORD, ts_get(a_h));   /* (the row's first cell's borders: the row's) */
+        }
+        return;
     case ODE_text_p: case ODE_text_h:
         if (!inbody && !hfk)
-            return;
-        if (tdepth)
             return;
         if (a_h)
             em_pstyle(st_find(a_h));
@@ -576,8 +626,15 @@ static void end(void)
         inbody = 0;
         break;
     case ODE_text_p: case ODE_text_h:
-        if ((inbody || hfk) && !tdepth)
+        if (inbody || hfk)
             em_endpar();
+        break;
+    case ODE_table_table_cell:
+        if (tdepth == 1 && inbody)
+            em_tbl(TB_ENDC, 0);         /* (1.6: an empty cell: an empty paragraph) */
+        break;
+    case ODE_style_table_column_properties: case ODE_style_table_cell_properties:
+        ctx = 0;
         break;
     case ODE_style_paragraph_properties: case ODE_style_text_properties: case ODE_style_page_layout_properties:
     case ODE_style_header_footer_properties:
@@ -604,12 +661,8 @@ static void end(void)
         em_unspan();
         break;
     case ODE_table_table:
-        if (tdepth)
-            --tdepth;
-        break;
-    case ODE_table_table_row:
-        if (tdepth == 1 && inbody)
-            em_endpar();
+        if (tdepth && !--tdepth)
+            em_tbl(TB_END, 0);          /* (1.6: the table's end) */
         break;
     case ODE_style_header: case ODE_style_footer:
         if (hfk) {
@@ -692,7 +745,7 @@ static unsigned char FASTCALL rdpart(unsigned char p, const char *s)
             if (ed < NEST)
                 est[ed++] = e;
             start();
-            xm_skipa = !(ode_aw[e >> 3] & (1 << (e & 7)));   /* (its attributes passed over) */
+            xm_skipa = !(ode_aw[e >> 3] & obit[e & 7]);   /* (its attributes passed over) */
             break;
         case XT_ATTR: attr(); break;
         case XT_OPEN: open(); break;

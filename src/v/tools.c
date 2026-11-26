@@ -19,14 +19,15 @@
    keys after a tab at the list's right) */
 static const char *const names[][2] = {
     { "About Veranda Write", "" }, { "\x1fWord count...", "" },
-    { "New", "Ctrl N" }, { "Open...", "Ctrl O" }, { "\x1fSave", "Ctrl S" }, { "Save as...", "Ctrl Shift S" },
+    { "New", "Ctrl N" }, { "New from template...", "" }, { "Open...", "Ctrl O" }, { "\x1fSave", "Ctrl S" },
+    { "Save as...", "Ctrl Shift S" }, { "Save as template...", "" },
     { "\x1fPage setup...", "" }, { "Export as PDF...", "Ctrl Shift P" }, { "Export as Word (.docx)...", "" },
     { "Export as OpenDocument (.odt)...", "" },
     { "\x1f" "Close", "Ctrl W" }, { "Quit", "Ctrl Q" },
     { "Undo", "Ctrl Z" }, { "Redo", "Ctrl Y" }, { "\x1f" "Cut", "Ctrl X" }, { "Copy", "Ctrl C" },
     { "Paste", "Ctrl V" }, { "Select all", "Ctrl A" }, { "\x1f" "Find...", "Ctrl F" }, { "Find next", "Ctrl G" },
     { "Replace...", "Ctrl H" }, { "Go to page...", "Ctrl Shift G" },
-    { "Page break", "Ctrl Return" }, { "Date and time", "Ctrl Shift D" }, { "\x1fHeader and footer...", "" },
+    { "Page break", "Ctrl Return" }, { "Date and time", "Ctrl Shift D" }, { "\x1fHeader and footer...", "" }, { "\x1fTable...", "" },
     { "Plain", "Ctrl T" }, { "Bold", "Ctrl B" }, { "Italic", "Ctrl I" }, { "Underline", "Ctrl U" },
     { "\x1fLarger", "Ctrl E" }, { "Smaller", "Ctrl Shift E" },
     { "Body", "" }, { "\x1fHeading 1", "" }, { "Heading 2", "" }, { "Heading 3", "" }, { "\x1fQuote", "" },
@@ -37,8 +38,14 @@ static const char *const names[][2] = {
     /* (W57: Tools, bar item 9) */
     { "Check spelling...", "F7" }, { "Spelling suggestions", "F8" }, { "\x1fMark misspellings", "" },
     { "\x1f" "English", "" }, { "Polish", "" }, { "\x1fSpelling options...", "" }, { "Get dictionaries...", "" },
+    { "\x1f" "AI help (Veranda Ask)", "" },
+    /* (W68: AI, bar item 11: with nothing selected, the paragraph at the cursor) */
+    { "Rewrite", "" }, { "Shorten", "" }, { "Fix grammar and spelling", "" }, { "\x1fTranslate to English", "" },
+    { "Translate to Polish", "" }, { "\x1fSummarise", "" }, { "Ask about this text...", "" },
+    { "\x1f" "Check for the answer", "" }, { "About AI help...", "" },
 };
-#define NT_TOOLS 48                     /* (Tools' items in names) */
+#define NT_TOOLS 51                     /* (Tools' items in names) */
+#define NT_AI    59                     /* (W68: the AI menu's) */
 
 /* s's width in the font now: a group's mark not drawn, a tab 24 pixels
    (the gap before the keys) */
@@ -67,7 +74,10 @@ void menu_make(void)
     unsigned int mx = 0;
     char *p;
     UseFont(FONT_UI);                   /* (the menus' font: theme_menus, Veranda's V79) */
-    if (b == 7) {
+    if (b == 10) {
+        callb(bank29, tb_mtext);        /* (1.6: Table, v/tbcmd.c) */
+        n = t_arg;
+    } else if (b == 7) {
         n = fm_n;
         for (i = 0; i < n; ++i)
             strcpy(itext[i], fm_names[i]);
@@ -78,8 +88,8 @@ void menu_make(void)
         for (i = 0; i < n; ++i)
             put_u(itext[i], sz_list[i]);
     } else {
-        a = b == 9 ? NT_TOOLS : mfirst[b];
-        n = b == 9 ? 7 : mfirst[b + 1] - a;
+        a = b == 11 ? NT_AI : b == 9 ? NT_TOOLS : mfirst[b];
+        n = b == 11 ? 9 : b == 9 ? 8 : mfirst[b + 1] - a;
         for (i = 0; i < n; ++i) {
             p = itext[i];
             strcpy(p, names[a + i][0]);
@@ -94,6 +104,7 @@ void menu_make(void)
                 fmt_lang = iobuf[6] & PREFS_POLISH ? LANG_PL : LANG_EN;
             }
             strcat(itext[2], sp_live ? "\ton" : "\toff");
+            strcat(itext[7], sp_cfg & SPC_NOAI ? "\toff" : "\ton");
             strcat(itext[fmt_lang == LANG_PL ? 4 : 3], "\tin use");
         }
     }
@@ -112,28 +123,7 @@ void menu_make(void)
     UseSystemFont();
 }
 
-void menus_layout(void)
-{
-    unsigned int x = 0;
-    unsigned char i, n;
-    UseFont(FONT_UI);
-    /* the fonts: FontList's, but the UI font (not one for documents) */
-    n = FontList(iobuf, 10);            /* (iobuf is free now) */
-    fm_n = 0;
-    for (i = 0; i < n && fm_n < 8; ++i)
-        if (strcmp((char *)iobuf + i * FONT_LEN, "Veranda UI"))
-            strcpy(fm_names[fm_n++], (char *)iobuf + i * FONT_LEN);
-    /* the bar as the kernel lays it out in the Veranda look (its
-       kernel/u/menu.s, the SDK's vr_bar_end): the mark, item 0 (bold) 24
-       pixels in, 6 pixels each side of a text, each item to a whole card */
-    for (i = 0; i < NBAR; ++i) {
-        barx[i] = x + (i ? 6 : 30);
-        x += (i ? 12 : 30) + strw(mbar.i[i].text) + (i ? 0 : strlen(mbar.i[i].text));
-        x = (x + 7) & ~7;
-    }
-    mbar.right = x + 64;
-    UseSystemFont();
-}
+/* (menus_layout: v/tbcmd.c, overlay 29: this one's room) */
 
 void sizes_fill(void)
 {

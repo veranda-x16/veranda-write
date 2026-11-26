@@ -104,7 +104,7 @@ static unsigned char load(const char *name)
     static unsigned char kind, e;
     static unsigned int n;
     static char *p;
-    callb(bank22, sp_unload);           /* (W59: spelling's banks back: a .docx or an .odt is converted in RAM) */
+    callb(bank16, sp_unload);           /* (W59: spelling's banks back: a .docx or an .odt is converted in RAM) */
     strncpy(nm, name, 63);
     nm[63] = 0;
     fh = FOpen(nm, 'r');
@@ -137,9 +137,11 @@ static unsigned char load(const char *name)
     fmt_cursor = 0;
     if (kind == 4)
         e = gw_load(fh);
-    else if (kind == 6)
-        e = ox_load(fh);
-    else {
+    else if (kind == 6) {
+        t_arg = 0;                      /* (an import's) */
+        callb(bank16, ox_up);           /* (W66: the office overlays, from SPELL.OVL) */
+        e = t_arg ? ox_load(fh) : FE_IO;
+    } else {
         e = kind ? fmt_begin(rd) : fmt_tbegin(rd);
         if (!e && ld_kind)
             e = fmt_step(rd, LD_FIRST);
@@ -148,6 +150,7 @@ static unsigned char load(const char *name)
     FClose(fh);
     docname[1] = 0;
     if (e) {
+        callb(bank16, ox_down);
         ld_fail(e);
         return 1;
     }
@@ -168,7 +171,7 @@ static unsigned char load(const char *name)
     if (kind == 4)
         gw_note();
     else if (kind == 6)
-        ox_note();
+        ox_note();                      /* (then the office overlays' banks back) */
     else if (!ld_kind)
         l1_note();                      /* (W38: letters not in the set, said) */
     return 0;
@@ -300,6 +303,25 @@ void f_quit(void)
     if (ask_discard()) {
         sw_end();                       /* (the swap's files) */
         EnterDeskTop();
+    }
+}
+
+/* (v/tbui.c's New from template, W67) the changes saved or not first:
+   t_arg 1 go on; the template pdf_name in curDirName opened as a new
+   document (Untitled: its file only read), t_arg 1 */
+void f_discard(void)
+{
+    t_arg = ask_discard();
+}
+
+void f_tload(void)
+{
+    extern char pdf_name[64];
+    doc_dir();
+    t_arg = !load(pdf_name);
+    if (t_arg) {
+        docname[0] = docname[1] = 0;
+        title();
     }
 }
 

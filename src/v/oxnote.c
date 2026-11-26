@@ -7,13 +7,15 @@
 
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #include <string.h>
+#include <vrwin.h>
 #include "cwv.h"
+#include "view.h"
 #include "../office.h"
 #pragma code-name ("OVERLAY18")
 #pragma rodata-name ("OVL18RO")
 #pragma bss-name ("OVL18BSS")
 
-/* "Left out: 2 pictures, 1 note. 1 table as text, 2 changes accepted."
+/* "Left out: 2 pictures, 1 note. 1 table in a cell as text, 2 changes accepted."
    in three lines of at most LN characters (the standard box's width:
    main RAM's msg_a, msg_b, msg_c, main.c's note3 shows them), apart at
    spaces; what does not fit ends with "..." */
@@ -51,7 +53,7 @@ static void FASTCALL item(unsigned int n, const char *one, const char *more)
     p += strlen(p);
 }
 
-void e_ox_note(void)
+static void note(void)
 {
     static unsigned char i, l;
     static char *q, *e;
@@ -59,22 +61,15 @@ void e_ox_note(void)
 #ifdef CW_TEST
     {
         /* "CW NOTE kind tables pictures boxes notes comments changes fields lost" */
-        static unsigned int v[9];
-        v[0] = oxc.kind;
-        v[1] = oxc.tables;
-        v[2] = oxc.pics;
-        v[3] = oxc.boxes;
-        v[4] = oxc.notes;
-        v[5] = oxc.comments;
-        v[6] = oxc.changes;
-        v[7] = oxc.fields;
-        v[8] = oxc.lost;
+        static unsigned int *const vp[8] = { &oxc.tables, &oxc.pics, &oxc.boxes, &oxc.notes, &oxc.comments,
+                                             &oxc.changes, &oxc.fields, &oxc.lost };
         p = (char *)iobuf;
-        strcpy(p, "CW NOTE");
-        p += 7;
-        for (k = 0; k < 9; ++k) {
+        strcpy(p, "CW NOTE ");
+        p += 8;
+        num(oxc.kind);
+        for (k = 0; k < 8; ++k) {
             *p++ = ' ';
-            num(v[k]);
+            num(*vp[k]);
         }
         *p = 0;
         LogText(iobuf);
@@ -93,7 +88,7 @@ void e_ox_note(void)
         *p++ = ' ';
         k = 0;
     }
-    item(oxc.tables, "table as text", "tables as text");
+    item(oxc.tables, "table in a cell as text", "tables in cells as text");   /* (1.6: tables kept, but in a cell) */
     item(oxc.changes, "change accepted", "changes accepted");
     item(oxc.fields, "field as text", "fields as text");
     item(oxc.lost, "character as ?", "characters as ?");
@@ -130,4 +125,12 @@ void e_ox_note(void)
     if (*q)
         strcpy(msg_c + (strlen(msg_c) > LN - 3 ? LN - 3 : strlen(msg_c)), "...");
     note3();
+}
+
+/* (W66) then the office overlays' banks back for the text (this one's
+   among them: nothing takes it before the return) */
+void e_ox_note(void)
+{
+    note();
+    callb(bank16, ox_down);
 }

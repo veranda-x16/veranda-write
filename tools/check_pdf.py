@@ -138,6 +138,8 @@ def host(d):
         'letter': dict(size=(612, 792), texts=[pl]),
         'empty': dict(size=(595.28, 841.89)),
         'big': dict(texts=['ł'], on=[(5, 'Page 5'), (5, '5/%d')]),
+        'table': dict(size=(595.28, 841.89), texts=['Cell one', 'Third cell', 'its second paragraph', 'Row two',
+                                                    'onto lines of its own']),
     }
     bad, said = [], []
     for name, n in want.items():

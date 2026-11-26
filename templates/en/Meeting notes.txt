@@ -1,0 +1,28 @@
+# Veranda Write's template: meeting notes
+@lang en
+@file Meeting notes
+= Meeting notes: [subject]
+**Date:** {date}     **Place:** [where]
+
+== Attendees
+@widths 40 40 20
+| **Name** | **Role** | **Present** |
+| [Name] | [Role] | [yes] |
+| [Name] | [Role] | [yes] |
+| [Name] | [Role] | [no] |
+
+== Agenda
+* [The first item]
+* [The second item]
+* [Any other business]
+
+== Notes
+[What was said and decided.]
+
+== Actions
+@widths 50 25 25
+| **Action** | **Who** | **By** |
+| [What is to be done] | [Name] | [Date] |
+| [What is to be done] | [Name] | [Date] |
+
+Next meeting: [date, time, place]

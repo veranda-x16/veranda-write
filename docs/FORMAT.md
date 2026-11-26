@@ -1,9 +1,10 @@
 # Veranda Write's document format (CWRD)
 
-Version 1.5 (1.0 plus paragraph styles: the `PARA` chunk and the `$11`
+Version 1.6 (1.0 plus paragraph styles: the `PARA` chunk and the `$11`
 code, 1.1; the page break, the `$12` code, 1.2; the text's character set
 in `INFO`, 1.3; the page setup, the `PAGE` chunk: the paper, the margins,
-the header and the footer, 1.4; the spelling language in `INFO`, 1.5). A Veranda Write document is a plain file on the card (any
+the header and the footer, 1.4; the spelling language in `INFO`, 1.5;
+tables, the `$14`-`$16` codes, 1.6). A Veranda Write document is a plain file on the card (any
 FAT name; the program adds `.cwr` when a name has no extension, and
 Veranda's shell opens `.CWR` files with it). All numbers are little
 endian. `src/format.c` reads and writes it on the X16 and in the host
@@ -15,7 +16,7 @@ tests; `tools/cwrd.py` does the same on a PC.
 |---|---|---|
 | 0 | 4 | `CWRD` |
 | 4 | 1 | major version: 1 |
-| 5 | 1 | minor version: 5 (1.0's files: 0, 1.1's: 1, 1.2's: 2, 1.3's: 3, 1.4's: 4) |
+| 5 | 1 | minor version: 6 (1.0's files: 0, 1.1's: 1, 1.2's: 2, 1.3's: 3, 1.4's: 4, 1.5's: 5) |
 | 6 | 2 | flags: 0 (reserved) |
 
 A reader refuses a file whose major version is newer than its own. A
@@ -38,8 +39,8 @@ skipped. The order matters only where noted.
 | `TEXT` | 1.0 | the text: the document's byte stream (below). Must come after `FONT`, `STYL`, `PARA` and `PAGE` |
 | `END ` | 1.0 | length 0: the end |
 
-Reserved for later versions: `NOTE` (footnotes), `OBJS` (tables,
-pictures), `META` (title, author, dates).
+Reserved for later versions: `NOTE` (footnotes), `OBJS` (pictures),
+`META` (title, author, dates). (Tables, 1.6, are codes in the text: below.)
 
 **The page setup** (`PAGE`, 1.4; sizes in twips, 1/1440 inch, 16 bits):
 
@@ -131,8 +132,11 @@ kind), so a program can walk the text backwards. Kinds:
 | `$10` | 1.0 | character style: the characters after it, up to the next `$10` code, are in that style (an index into `STYL`) |
 | `$11` | 1.1 | paragraph style: the paragraph's style, an index into `PARA` (1 .. n - 1: style 0 needs no code). Only as the first bytes of a paragraph (the text's first, or straight after a CR), before any other code |
 | `$12` | 1.2 | a page break: argument 0. A paragraph of its own: `[$12 0 $12]` and the paragraph's CR, nothing else in the paragraph (no paragraph code). The next paragraph starts a new page (1.4's programs; Veranda Write 1.2-1.3 drew a dashed line across the column there and went on). A page break in a paragraph with anything else in it does nothing (Veranda Write takes it out when a deletion next to it, Backspace or Delete, joins its paragraph to another; text typed into its paragraph leaves it there, doing nothing, and hides the line). A 1.1 reader keeps it and shows an empty paragraph |
-| `$13` | (5) | an object: an index into `OBJS` (a table, a picture) |
-| `$14-$17` | | reserved |
+| `$13` | (5) | an object: an index into `OBJS` (a picture) |
+| `$14` | 1.6 | a table's row starts: the first paragraph of its first cell. Argument: flags, bit 0 no borders (the same in every row of a table), bits 1-7 reserved (0). Followed straight away by the first cell's `$15` |
+| `$15` | 1.6 | a table's cell starts: its first paragraph. Argument: its width in 256ths of the text's width, 1-255 (0: 32) |
+| `$16` | 1.6 | a further paragraph of the cell before it. Argument: 0 |
+| `$17` | | reserved |
 
 The text starts in style 0. A reader drops a character style code whose
 argument is not a style of `STYL`, a paragraph code whose argument is 0 or
@@ -145,6 +149,45 @@ Veranda Write writes no code that does nothing (it takes out a style
 code straight before another one, one that sets the style already in
 effect, one at the very end; it writes no paragraph code for style 0),
 but a reader must not rely on that.
+
+## Tables (1.6)
+
+A table is paragraphs. Each paragraph of a table starts with a table
+code, after its paragraph code (if it has one) and before anything else
+but a character style code:
+
+| A paragraph that is | starts with |
+|---|---|
+| a row's first cell's first paragraph | `[$14 f $14] [$15 w $15]` |
+| another cell's first paragraph | `[$15 w $15]` |
+| a cell's second, third ... paragraph | `[$16 0 $16]` |
+
+A row is its `$14` paragraph and the `$15` and `$16` paragraphs after it,
+up to the next paragraph that has no `$15` or `$16` (a new row, or text
+after the table). A table is rows one after another; its rows may have
+different numbers of cells (Veranda Write makes them alike). A row has
+8 cells at most (a ninth cell's paragraphs are taken as the eighth's);
+a `$16` paragraph with no cell before it, or a `$15` with no row, is
+laid out as an ordinary paragraph. A cell's width is its share of the
+text's width (256ths; the cells of a row should add up to 256 at most:
+borders past the text's right edge are drawn at it). Each paragraph
+of a cell keeps its own paragraph style (its alignment, a list) and
+character styles. There are no tables inside tables and no merged
+cells: a file from elsewhere has them as text (a cell's table) or as
+one wider cell (merged ones).
+
+On the screen and in a PDF, a row is as tall as its tallest cell and
+never splits across pages; each cell's text wraps inside the cell, 4
+pixels in from its left border and 3 from its right, its top 3 below
+the row's top border; the borders are 1-pixel lines (none when bit 0
+of `$14`'s flags is set). In Veranda Write a row is 255 pixels tall at
+most (a taller cell's lines below that are kept, not drawn) and holds
+2,000 bytes (typing stops there; a file's longer row is read).
+
+A 1.5 (or older) reader keeps the codes and passes over them (they have
+no width): it shows each cell's paragraphs as ordinary paragraphs, one
+after another, and saves them back with the codes in place, so a 1.6
+program opens the tables again.
 
 ## geoWrite documents
 

@@ -37,6 +37,11 @@
 #pragma bss-name ("OVL16BSS")
 
 extern char run[100];                   /* (view.c: main RAM, what the kernel draws) */
+extern char sl[64], sr[40];             /* (view.c: main RAM, the status bar's) */
+unsigned char cw_esc(void);             /* (glue.s) Esc in the ROM's key queue: taken, 1 */
+
+/* (the PDF's progress, plat_pdf_poll: v/tbcmd.c, overlay 29, since this
+   overlay took spelling's and the office files' loader, W66) */
 
 extern char pdf_name[64];               /* (main.c: the dialog and the kernel read it) */
 #define name pdf_name
@@ -515,7 +520,7 @@ void t_pdf(void)
     if (pp_on)
         return;
     k = t_arg;
-    callb(bank22, sp_unload);           /* (W59: spelling's banks back for the export) */
+    sp_unload();                        /* (W59: spelling's banks back for the export) */
     if (ld_kind)
         ld_need(0xFFFFFFFFUL);          /* (all of it in first) */
     /* the name: the document's, its extension the format's */
@@ -538,6 +543,12 @@ void t_pdf(void)
         FClose(h);
         if (yesno("Replace the file", name))
             break;
+    }
+    if (k) {
+        t_arg = 1;                      /* (an export's) */
+        ox_up();                        /* (W66: the office overlays, from SPELL.OVL) */
+        if (!t_arg)
+            goto back;
     }
     pdf_fh = FOpen(name, 'w');
     if (pdf_fh < 2) {
@@ -583,6 +594,7 @@ void t_pdf(void)
         status_dirty = 1;
     }
 back:
+    ox_down();
     strcpy((char *)curDirName, dir);
     ChDir((char *)curDirName);
     SetPointer(PTR_ARROW);

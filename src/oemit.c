@@ -56,6 +56,7 @@
 #define em_mp e_em_mp
 #define em_span e_em_span
 #define em_unspan e_em_unspan
+#define em_tbl e_em_tbl
 #endif
 #include <string.h>
 #include "office.h"
@@ -68,6 +69,13 @@ unsigned char em_hf;                    /* 0: the document; 1 the header, 2 the 
 
 static unsigned char first, begun, pb_in, last_pb, on, cs, fsans, fmono, rkey, rst, pbb, pba;
 static unsigned char hfn, hft, hfa;
+/* (W71) the last run's and paragraph's style found again only when what
+   they come from changed (each a few thousand cycles: the styles' bank,
+   the merges, the tables' look-up): run_style's em_r, em_rs, em_ps,
+   em_p.kind; par_style's em_p, em_ps, em_hf (and pbb, pba, hfa); 0 in
+   mm_ok when a style or the defaults change */
+static struct prop mr_r, mp_p;
+static unsigned char mm_ok, mr_rs, mr_ps, mr_kind, mr_k, mp_ps, mp_hf, mp_k, mp_pbb, mp_pba, mp_hfa;
 static char hfb[HF_MAX + 1];
 static unsigned char err;
 
@@ -75,9 +83,12 @@ static unsigned char err;
    here, its properties in a RAM bank of their own (16 bytes each: a
    document of LibreOffice's has hundreds); the one being defined in
    cur (put in the bank before any is read) */
-static unsigned int st_h[OS_N];
+/* (W71) the styles' names' hashes, low and high bytes apart (v/omerge.s's
+   st_find: an .odt has hundreds) */
+unsigned char st_hl[OS_N], st_hh[OS_N];
 static unsigned char st_par[OS_N];
-static unsigned char sty_n, cur_st, cur_d, sbank;
+static unsigned char cur_st, cur_d, sbank, sp_i;
+unsigned char sty_n;                    /* (v/omerge.s reads it) */
 static struct prop cur, sp;
 #define SCR ((unsigned char *)EFN)      /* (main RAM: bk_rd's and bk_wr's) */
 
@@ -101,6 +112,7 @@ static void flushcur(void)
     if (!cur_d)
         return;
     cur_d = 0;
+    sp_i = 0xFF;
     memcpy(SCR, &cur, sizeof cur);
     bk_wr(sbank, 0xA000 + (cur_st << 4), SCR, sizeof cur);
 }
@@ -109,13 +121,25 @@ static void flushcur(void)
 static struct prop *FASTCALL sget(unsigned char i)
 {
     flushcur();
-    bk_rd(sbank, 0xA000 + (i << 4), SCR, sizeof sp);
-    memcpy(&sp, SCR, sizeof sp);
+    if (i != sp_i) {                    /* (W71: the one in sp read once) */
+        sp_i = i;
+        bk_rd(sbank, 0xA000 + (i << 4), SCR, sizeof sp);
+        memcpy(&sp, SCR, sizeof sp);
+    }
     return &sp;
 }
 #ifdef CW_HOST
 unsigned char em_ps, em_rs, def_ps, pr_t;   /* (the X16's: main.c, main RAM) */
 #endif
+/* (1.6) the next paragraph's table code (0 none, K_TROW, K_TCELL,
+   K_TPARA: em_need writes it and makes it K_TPARA, the cell's further
+   paragraphs), the cell's width (256ths of the text's), the row's flags;
+   the last paragraph a table's; the table's grid (its columns' widths,
+   twips), the cell's column, span, paragraphs, the row's cells */
+#define NGRID 16
+static unsigned char em_tk, em_tw, em_tf, lastt, gn, gi, span, cellp, cellc;
+static unsigned int grid[NGRID];
+static unsigned long gsum;
 
 /*---------------------------------------------------------------
   properties
@@ -129,6 +153,9 @@ static void FASTCALL pr_clear(struct prop *p)
 }
 
 /* d's fields not said taken from s */
+#ifndef CW_HOST
+void FASTCALL pr_merge(struct prop *d, const struct prop *s);   /* (W71: v/omerge.s) */
+#else
 static void FASTCALL pr_merge(struct prop *d, const struct prop *s)
 {
     static unsigned char *a;
@@ -146,6 +173,7 @@ static void FASTCALL pr_merge(struct prop *d, const struct prop *s)
     if (!d->size)
         d->size = s->size;
 }
+#endif
 
 static struct prop *tgt(void)
 {
@@ -163,6 +191,8 @@ void FASTCALL pr_set(unsigned int fv)
 {
     static struct prop *p;
     static unsigned char f, v;
+    if (pr_t >= PT_DEF)
+        mm_ok = 0;
     p = tgt();
     f = (unsigned char)(fv >> 8);
     v = (unsigned char)fv;
@@ -202,14 +232,16 @@ void FASTCALL pr_clr(unsigned char t)
 }
 
 /* the style named by hash h: its index (0xFF: none) */
+#ifdef CW_HOST
 unsigned char FASTCALL st_find(unsigned int h)
 {
     static unsigned char i;
     for (i = 0; i < sty_n; ++i)
-        if (st_h[i] == h)
+        if (st_hl[i] == (unsigned char)h && st_hh[i] == h >> 8)
             return i;
     return 0xFF;
 }
+#endif
 
 /* a style defined: its index (its properties cleared, the target now),
    0xFF when the table is full (the target none) */
@@ -226,7 +258,9 @@ unsigned char FASTCALL st_new(unsigned int h)
         i = sty_n++;
     }
     flushcur();
-    st_h[i] = h;
+    mm_ok = 0;
+    st_hl[i] = (unsigned char)h;
+    st_hh[i] = h >> 8;
     st_par[i] = 0xFF;
     cur_st = i;
     pr_clr(PT_STY);
@@ -293,14 +327,19 @@ void em_unspan(void)
 /*---------------------------------------------------------------
   the text
  ---------------------------------------------------------------*/
+/* the buffer full: into the text */
+static void eout(void)
+{
+    if (cb_append(&tx, EOB, EOBN, BANK_SIZE - 64))
+        err = FE_MEM;
+    on = 0;
+}
+
 static void FASTCALL put(unsigned char c)
 {
     EOB[on++] = c;
-    if (on == EOBN) {
-        if (cb_append(&tx, EOB, EOBN, BANK_SIZE - 64))
-            err = FE_MEM;
-        on = 0;
-    }
+    if (on == EOBN)
+        eout();
 }
 
 static void FASTCALL code(unsigned char k, unsigned char a)
@@ -318,12 +357,15 @@ unsigned char em_init(void)
     cs = 0;
     rkey = 0xFF;
     em_hf = 0;
+    em_tk = lastt = 0;
     sty_n = 0;
     cur_d = 0;
     nspan = 0;
     def_ps = 0xFF;
     pr_clear(&em_def);
     memset(&oxc, 0, sizeof oxc);
+    mm_ok = 0;
+    sp_i = 0xFF;
     fmono = 0xFF;                       /* (Gate Mono's index: when a run is in it) */
     fsans = 0;                          /* (def_font, sty_reset's) */
     sbank = bk_get();
@@ -411,11 +453,25 @@ void em_need(void)
     static unsigned char k;
     if (begun)
         return;
-    k = par_style();
+    if (mm_ok & 2 && mp_ps == em_ps && mp_hf == em_hf && !memcmp(&mp_p, &em_p, sizeof em_p)) {
+        k = mp_k;
+        pbb = mp_pbb;
+        pba = mp_pba;
+        hfa = mp_hfa;
+    } else {
+        mp_k = k = par_style();
+        memcpy(&mp_p, &em_p, sizeof em_p);
+        mp_ps = em_ps;
+        mp_hf = em_hf;
+        mp_pbb = pbb;
+        mp_pba = pba;
+        mp_hfa = hfa;
+        mm_ok |= 2;
+    }
     begun = 1;
     if (em_hf)
         return;
-    if (pbb && !first && !last_pb) {
+    if (pbb && !first && !last_pb && !em_tk) {
         em_pbreak();
         begun = 1;
     }
@@ -425,6 +481,17 @@ void em_need(void)
     first = 0;
     if (k)
         code(K_PS, k);
+    lastt = em_tk;
+    if (em_tk) {
+        /* (1.6) a table's paragraph: a row's first, a cell's, a cell's further one */
+        if (em_tk == K_TROW)
+            code(K_TROW, em_tf);
+        if (em_tk == K_TPARA)
+            code(K_TPARA, 0);
+        else
+            code(K_TCELL, em_tw);
+        em_tk = K_TPARA;
+    }
     rkey = 0xFF;
 }
 
@@ -459,6 +526,70 @@ void em_pbreak(void)
     first = 0;
     begun = 0;
     pb_in = last_pb = 1;
+}
+
+/* (1.6) a table's events (oimp.h's TB_): its grid, its cells' widths
+   (their grid columns', 256ths of the text's, or of the grid's when it
+   is wider), each cell's first paragraph's codes (an empty cell: an
+   empty paragraph) */
+void em_tbl(unsigned char op, unsigned int v)
+{
+    static unsigned long w, t;
+    static unsigned char k;
+    switch (op) {
+    case TB_START:
+        gn = em_tf = 0;
+        gsum = 0;
+        break;
+    case TB_COL:
+        if (gn < NGRID) {
+            grid[gn++] = v;
+            gsum += v;
+        }
+        break;
+    case TB_BORD:
+        em_tf = (unsigned char)v;
+        break;
+    case TB_ROW:
+        gi = cellc = 0;
+        break;
+    case TB_CELL:
+        span = 1;
+        cellp = 0;
+        break;
+    case TB_SPAN:
+        span = v < 1 ? 1 : v > NGRID ? NGRID : (unsigned char)v;
+        break;
+    case TB_PARA:
+        if (!cellp++) {
+            em_tk = cellc ? K_TCELL : K_TROW;
+            for (w = 0, k = gi; k < gi + span && k < gn; ++k)
+                w += grid[k];
+            t = pgs.w - pgs.left - pgs.right;
+            if (gsum > t)
+                t = gsum;
+            w = w ? (w * 256 + t / 2) / t : 64;
+            em_tw = w < 1 ? 1 : w > 255 ? 255 : (unsigned char)w;
+            break;
+        }
+        em_tk = K_TPARA;                /* (a further paragraph) */
+        break;
+    case TB_NEST:
+        em_tk = K_TPARA;
+        break;
+    case TB_ENDC:
+        if (!cellp) {
+            em_par();                   /* (an empty cell: an empty paragraph) */
+            em_tbl(TB_PARA, 0);
+            em_endpar();
+        }
+        ++cellc;
+        gi += span;
+        break;
+    case TB_END:
+        em_tk = 0;
+        break;
+    }
 }
 
 /* the run's style: what it says, its character style's, its paragraph's
@@ -513,6 +644,8 @@ void em_run(void)
 }
 
 /* n characters of the run (the set's bytes, TAB) */
+static const char *ep;
+
 void FASTCALL em_chars(const char *s, unsigned char n)
 {
     static unsigned char c;
@@ -537,15 +670,29 @@ void FASTCALL em_chars(const char *s, unsigned char n)
         return;
     }
     if (rkey == 0xFF) {
-        rst = run_style();
+        if (mm_ok & 1 && mr_rs == em_rs && mr_ps == em_ps && mr_kind == em_p.kind && !memcmp(&mr_r, &em_r, sizeof em_r))
+            rst = mr_k;
+        else {
+            mr_k = rst = run_style();
+            memcpy(&mr_r, &em_r, sizeof em_r);
+            mr_rs = em_rs;
+            mr_ps = em_ps;
+            mr_kind = em_p.kind;
+            mm_ok |= 1;
+        }
         rkey = 0;
     }
     if (rst != cs) {
         code(K_CS, rst);
         cs = rst;
     }
-    while (n--)
-        put((unsigned char)*s++);
+    /* (W71) in line (put: some 90 cycles a byte) */
+    ep = s;
+    do {
+        EOB[on] = *ep++;
+        if (++on == EOBN)
+            eout();
+    } while (--n);
 }
 
 void FASTCALL em_char(unsigned char c)
@@ -605,8 +752,8 @@ void em_hfend(void)
 /* the text's end; 0 done, else FE_ */
 unsigned char em_finish(void)
 {
-    if (last_pb)
-        put(CH_CR);                     /* (a page break last: an empty paragraph after it) */
+    if (last_pb || lastt)
+        put(CH_CR);                     /* (a page break or a table last: an empty paragraph after it) */
     if (on && cb_append(&tx, EOB, on, BANK_SIZE - 64))
         err = FE_MEM;
     on = 0;

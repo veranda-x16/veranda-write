@@ -227,6 +227,19 @@ static void FASTCALL obj(unsigned int n)
     ps("0 obj\n");
 }
 
+/* the encoding object's text (pdfenc.h) in iobuf, its part k: its bytes */
+#ifdef CW_HOST
+static unsigned int FASTCALL pdf_enc(unsigned char k)
+{
+    static const char a[] = PDF_ENC0, b[] = PDF_DIFF PDF_ENC1;
+    memcpy(iobuf, k ? b : a, k ? sizeof b - 1 : sizeof a - 1);
+    return k ? sizeof b - 1 : sizeof a - 1;
+}
+#else
+unsigned int FASTCALL f_pdf_enc(unsigned char k);   /* (v/tbcmd.c, overlay 29: through glue.s) */
+#define pdf_enc f_pdf_enc
+#endif
+
 static void endobj(void)
 {
     ps("endobj\n");
@@ -256,9 +269,11 @@ static void fonts(void)
                 mono[k] = 1;
     }
     obj(3);
-    ps("<< /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences [");
-    ps(pdf_diff);
-    ps("] >>\n");
+    flush();
+    ob_n = pdf_enc(0);                  /* (1.6: overlay 29's text on the X16) */
+    flush();
+    ob_n = pdf_enc(1);
+    flush();
     endobj();
     for (k = 0; k < 8; ++k) {
         obj(4 + k);
@@ -529,6 +544,8 @@ static void scan(void)
     end_run();
 }
 
+static unsigned char lnum;              /* (1.6) a cell's line's list number (0: par_number's) */
+
 static void FASTCALL line(unsigned int i, unsigned long top)
 {
     static const struct pstyle *q;
@@ -573,7 +590,7 @@ static void FASTCALL line(unsigned int i, unsigned long top)
         if (q->kind == PK_BULLET)
             rb[rn++] = 0x95;            /* (WinAnsi's bullet) */
         else {
-            pv = par_number(i);
+            pv = lnum ? lnum : par_number(i);
             rn = pdf_dec();
             memcpy(rb, pd, rn);
             rb[rn++] = '.';
@@ -596,6 +613,98 @@ static void FASTCALL line(unsigned int i, unsigned long top)
     ps("ET\n");
     if (jx)
         ps("0 Tw\n");
+}
+
+/*---------------------------------------------------------------
+  (1.6, W63) a table's row: its borders (lines of half a point, as the
+  screen draws them), its cells' lines (table.c's sub-lines), each line
+  at its cell's place and in its width, as the screen has them
+ ---------------------------------------------------------------*/
+#ifdef CW_HOST
+extern unsigned char tb_xb[64];
+#define TXB tb_xb
+#define TB_PDF() tb_pdf()
+#else
+#define TXB lb
+void __fastcall__ callb(unsigned char b, void (*f)(void));
+extern unsigned char bank27;
+#define TB_PDF() callb(bank27, tb_pdf)
+#endif
+#define U ((struct sub *)TXB)
+static unsigned int xx[TB_MAXC + 1];
+static unsigned int rtop, ri;           /* (row's: its line's top on the page, its number) */
+
+static long FASTCALL px(unsigned int v)
+{
+    return (long)v * PX;
+}
+
+/* the row's cells' boxes (the rows' boxes meet: one line between them)
+   as PDF content in iobuf: TXB[1] cells, their borders at TXB + 4
+   (pixels), at TXB + 24 x0, the boxes' bottom, their height
+   (thousandths of a point); its bytes (the X16's: v/tbui.c, overlay 28,
+   overlay 15's room) */
+#ifdef CW_HOST
+static unsigned int pdf_boxes(void)
+{
+    long v[3];
+    unsigned int k, n = 0;
+    memcpy(v, TXB + 24, sizeof v);
+    n = sprintf((char *)iobuf, "0.5 w\n");
+    for (k = 0; k < TXB[1]; ++k)
+        n += sprintf((char *)iobuf + n, "%.3f %.3f %.3f %.3f re\n", (v[0] + (long)xx[k] * PX) / 1000.0,
+                     v[1] / 1000.0, (long)(xx[k + 1] - xx[k]) * PX / 1000.0, v[2] / 1000.0);
+    n += sprintf((char *)iobuf + n, "S\n");
+    return n;
+}
+#else
+unsigned int f_pdf_boxes(void);
+#define pdf_boxes f_pdf_boxes
+#endif
+
+static void row(void)
+{
+    static struct line rl;
+    static pos_t rp;
+    static long v[3];
+    static unsigned int w, a, b, *q;
+    static unsigned char n, k;
+    memcpy(&rl, &l, sizeof l);
+    rp = lp;
+    w = wrap_w;
+    tb_p = lp;
+    tb_s = l.s;
+    tb_is = 0xFF;
+    TB_PDF();
+    n = TXB[0];
+    memcpy(xx, TXB + 4, sizeof xx);
+    v[0] = X0;
+    v[1] = Y0 - px(rtop + rl.h);
+    v[2] = px(rl.h);
+    if (!(TXB[2] & TR_NOGRID)) {
+        memcpy(TXB + 24, v, sizeof v);
+        flush();
+        ob_n = pdf_boxes();
+        flush();
+    }
+    for (k = 0; k < n; ++k) {
+        tb_is = k;
+        TB_PDF();
+        memcpy(&l, TXB, sizeof l);
+        lp = rp + U->off;
+        q = xx + U->c;
+        a = q[0];
+        b = q[1] - a;
+        wrap_w = b > TB_PADX + 8 ? b - TB_PADX : 8;
+        X0 = v[0] + px(a + TB_PADL);
+        lnum = U->num;
+        line(ri, rtop + U->y);
+    }
+    lnum = 0;
+    X0 = v[0];
+    wrap_w = w;
+    lp = rp;
+    memcpy(&l, &rl, sizeof l);
 }
 
 /*---------------------------------------------------------------
@@ -666,7 +775,12 @@ unsigned char pdf_write(void)
         top = 0;
         for (;;) {
             lt_get(i, &l);
-            if (!(l.f & LF_PB))
+            if (IS_TR(&l)) {
+                ri = i;                 /* (1.6: a table's row) */
+                rtop = (unsigned int)top;
+                row();
+            }
+            else if (!(l.f & LF_PB))
                 line(i, top);
             top += l.h;
             lp += l.len;

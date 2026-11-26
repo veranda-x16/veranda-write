@@ -1,0 +1,24 @@
+# Veranda Write's template: a report (page numbers in the footer)
+@lang en
+@file Report
+@footer [Report's title]||Page {page} of {pages}
+= [The report's title]
+[Author] · {date}
+
+== Summary
+[What the report is about, and what it found, in a few lines.]
+
+== Introduction
+[The question, why it matters, how it was looked at.]
+
+== Findings
+[What was found. The table gives the numbers.]
+
+@widths 40 20 20 20
+| **Item** | **First** | **Second** | **Change** |
+| [Item one] | [0] | [0] | [0] |
+| [Item two] | [0] | [0] | [0] |
+| [Item three] | [0] | [0] | [0] |
+
+== Conclusions
+[What follows from the findings; what should be done.]

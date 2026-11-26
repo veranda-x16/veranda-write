@@ -1,0 +1,24 @@
+# Szablon Veranda Write: raport (numery stron w stopce)
+@lang pl
+@file Raport
+@footer [Tytuł raportu]||Strona {page} z {pages}
+= [Tytuł raportu]
+[Autor] · {date}
+
+== Streszczenie
+[O czym jest raport i co wykazał, w kilku zdaniach.]
+
+== Wstęp
+[Pytanie, dlaczego jest ważne, jak je zbadano.]
+
+== Wyniki
+[Co ustalono. Tabela podaje liczby.]
+
+@widths 40 20 20 20
+| **Pozycja** | **Pierwszy** | **Drugi** | **Zmiana** |
+| [Pozycja pierwsza] | [0] | [0] | [0] |
+| [Pozycja druga] | [0] | [0] | [0] |
+| [Pozycja trzecia] | [0] | [0] | [0] |
+
+== Wnioski
+[Co wynika z wyników; co należy zrobić.]

@@ -31,14 +31,22 @@ struct ntab {
 };
 #define NTAB(x) { x##_h, x##_l, x##_i, x##_m }
 
+#ifndef CW_HOST
+#ifdef OXN_DOCX
+#define nlook dx_nlook
+#else
+#define nlook od_nlook
+#endif
+unsigned char FASTCALL nlook(const struct ntab *t);   /* (W71: v/ohash.s's) */
+#else
 static unsigned char FASTCALL nlook(const struct ntab *t)
 {
     static unsigned int k;
     static const unsigned int *th;
     static const unsigned char *tl, *ti;
     static unsigned char n, i, m, id;
-    k = hash(XNAME);
-    n = (unsigned char)strlen(XNAME);
+    k = xm_hash;                        /* (W71: XNAME's, the tokenizer's) */
+    n = xm_nlen;
     th = t->h;
     tl = t->l;
     ti = t->id;
@@ -48,6 +56,10 @@ static unsigned char FASTCALL nlook(const struct ntab *t)
             return id;
     return 0;
 }
+#endif
+
+/* (W71) a bit of an element's in a bitmap (cc65's 1 << n: a call) */
+static const unsigned char obit[8] = { 1, 2, 4, 8, 16, 32, 64, 128 };
 
 static int FASTCALL onum(const char *s)
 {

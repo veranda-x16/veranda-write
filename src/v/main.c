@@ -18,9 +18,12 @@
 #include "../office.h"
 #include "../spell.h"
 
-unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16;
-unsigned char bank17, bank18, bank19, bank20, bank21, bank22, bank23, bank24, bank25, bank26, bankt;
+/* (bank1 .. bank16, bank27 .. bank29: glue.s's, in a row; 23-26 and
+   17-22 there too, v/spload.c's) */
+unsigned char bankt;
 unsigned char cw_idle, follow;
+unsigned char ai_st, ai_act;            /* (W68, v/aiui.c) AI help: the request's state, its action */
+unsigned int ai_gen0;                   /*   the text's changes when it was asked */
 pos_t cur, anc;
 unsigned int goal_x = 0xFFFF;
 unsigned char ty_style, ty_kept, need_view, status_dirty;
@@ -40,6 +43,8 @@ char pdf_name[64];                      /* its name (pgpanel.c: the dialog's) */
 /* stage 4's (W49-W54): the importers' (overlays 17 and 18 both read them) */
 unsigned char xm_vlen;                  /* the token's value's bytes (oxml.c) */
 unsigned char xm_skipa;                 /* (the reader's: this element's attributes not wanted) */
+unsigned int xm_hash;                   /* (W71) the token's name's hash and length */
+unsigned char xm_nlen;
 struct oxcount oxc;                     /* what the conversion changed (oemit.c, v/oxnote.c) */
 unsigned char pr_t, em_ps, em_rs, def_ps;   /* the readers' and the emitter's (oimp.h) */
 unsigned char oz_err;                   /* (ozip.c's) */
@@ -48,6 +53,7 @@ unsigned int pf_x, pf_y, pf_w;
 unsigned char pf_ok;
 unsigned char oe_on, op_x;              /* the exporter's buffer's bytes; a value's (oexp.c, v/oparts.s) */
 unsigned long oe_size;                  /* (oexp.c's) */
+pos_t oe_rp;                            /* (1.6: oexp.c's place in the text, for v/oxnote.c's oe_poll) */
 
 void set_status(const char *s)
 {
@@ -219,6 +225,8 @@ void cw_aside(void)
     fl_flush();
     if (bank23)
         sp_aside();                     /* (W56: the dictionary's file closed, its cache's banks back) */
+    if (ai_st)
+        ai_st = 2;                      /* (W68: AI help asked: AI.RES looked at when back) */
     sw_aside();                         /* (the pool's idle runs, and chunks out to the card
                                            till Veranda has the banks the switcher needs) */
 #ifdef CW_TEST
@@ -242,7 +250,7 @@ void dlg_keep(void)
 unsigned char sp_on(void)
 {
     if (!bank23 && !sp_nofile)
-        callb(bank22, sp_load);
+        callb(bank16, sp_load);
     return bank23;
 }
 
@@ -263,53 +271,17 @@ void fonts_init(void);
 int main(void)
 {
     unsigned char opts = r0L;
-    LoadOverlay(1, 0);
-    bank1 = r1L;
-    LoadOverlay(2, 0);
-    bank2 = r1L;
-    LoadOverlay(3, 0);
-    bank3 = r1L;
-    LoadOverlay(4, 0);
-    bank4 = r1L;
-    LoadOverlay(5, 0);
-    bank5 = r1L;
-    LoadOverlay(6, 0);
-    bank6 = r1L;
-    LoadOverlay(7, 0);
-    bank7 = r1L;
-    LoadOverlay(8, 0);
-    bank8 = r1L;
-    LoadOverlay(9, 0);
-    bank9 = r1L;
-    LoadOverlay(10, 0);
-    bank10 = r1L;
-    LoadOverlay(11, 0);
-    bank11 = r1L;
+    unsigned char k;
+    /* the records: overlays 1-16, then 27-29 (1.6's tables); their
+       banks' variables in a row (glue.s) */
+    for (k = 1; k <= 19; ++k) {
+        LoadOverlay(k, 0);
+        (&bank1)[k - 1] = r1L;
+    }
     sw_tbank = bank11;                  /* (the paged cbufs' tables: cbuf.c maps it) */
-    LoadOverlay(12, 0);
-    bank12 = r1L;
-    LoadOverlay(13, 0);
-    bank13 = r1L;
-    LoadOverlay(14, 0);
-    bank14 = r1L;
-    LoadOverlay(15, 0);
-    bank15 = r1L;
-    LoadOverlay(16, 0);
-    bank16 = r1L;
-    LoadOverlay(17, 0);
-    bank17 = r1L;
-    LoadOverlay(18, 0);
-    bank18 = r1L;
-    LoadOverlay(19, 0);
-    bank19 = r1L;
-    LoadOverlay(20, 0);
-    bank20 = r1L;
-    LoadOverlay(21, 0);
-    bank21 = r1L;
-    LoadOverlay(22, 0);
-    bank22 = r1L;
-    /* (overlays 23-26, spelling: not records; v/spload.c loads them
-       from SPELL.OVL when they are first wanted, W59) */
+    /* (overlays 23-26, spelling, and 17-22, the office files: not
+       records; v/spload.c loads them from SPELL.OVL when they are
+       wanted, W59, W66) */
 #ifdef CW_TEST
     LoadOverlay(TOVL, 0);
     bankt = r1L;

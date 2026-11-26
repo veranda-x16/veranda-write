@@ -1,0 +1,30 @@
+# Szablon Veranda Write: życiorys (CV)
+@lang pl
+@file Curriculum vitae
+= [Imię i nazwisko]
+[Ulica, miejscowość] · [Telefon] · [E-mail]
+
+== O mnie
+[Dwa, trzy zdania: czym się zajmuję, w czym jestem dobry, czego szukam.]
+
+== Doświadczenie zawodowe
+@widths 25 75
+| **[2022 - obecnie]** | **[Stanowisko]**, [Firma], [Miejscowość]\
+[Czym się zajmowałem i co z tego wyszło.] |
+| **[2018 - 2022]** | **[Stanowisko]**, [Firma], [Miejscowość]\
+[Czym się zajmowałem i co z tego wyszło.] |
+
+== Wykształcenie
+@widths 25 75
+| **[2014 - 2018]** | [Kierunek], [Uczelnia lub szkoła] |
+
+== Umiejętności
+@widths 35 65
+| Języki | [polski (ojczysty), angielski (dobry)] |
+| Komputer | [Programy, systemy, języki] |
+| Inne | [Prawo jazdy, certyfikaty] |
+
+== Zainteresowania
+[Jedno zdanie o tym, co robię poza pracą.]
+
+Wyrażam zgodę na przetwarzanie moich danych osobowych w celu prowadzenia rekrutacji.

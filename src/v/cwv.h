@@ -42,8 +42,14 @@
      overlay 24 spelling's suggestions (sugg.c), its files (v/spio.c)
      overlay 25 the spelling panel (v/spui.c)
      overlay 26 the suggestions' pop-up, the Tools menu (v/sppop.c)
-     overlay 27 (test builds) the session's logs: record 23 of the
-                file (23-26 are SPELL.OVL's: v/spload.c)
+     overlay 27 a table's row laid out and drawn (table.c, v/tbview.c;
+                record 23 of the file: 23-26 are SPELL.OVL's, v/spload.c)
+     overlay 28 the table edits, the table's keys (tabedit.c, v/tbui.c;
+                record 24)
+     overlay 29 the Table menu, its boxes, templates; a paragraph's start
+                in a row (v/tbcmd.c, tabpar.c; record 25)
+     overlay 30 (test builds) the session's logs: record 26
+     overlay 31 AI help (ai.c, v/aiui.c; SPELL.OVL's eleventh, W68)
    callb() runs a function of another overlay and maps the caller's back.
 
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
@@ -95,7 +101,19 @@ extern unsigned int ta_bot;
 /* main.c */
 extern unsigned char bank1, bank2, bank3, bank4, bank5, bank6, bank7, bank8, bank9, bank10, bank11, bank12, bank13, bank14, bank15, bank16;
 extern unsigned char bank17, bank18, bank19, bank20, bank21, bank22, bank23, bank24, bank25, bank26, bankt;
-#define TOVL 23                         /* the test build's overlay (src/v/test.c) */
+void ox_up(void), ox_down(void);     /* (v/spload.c, overlay 16: the office overlays, W66) */
+extern unsigned char bank27, bank28, bank29;   /* (1.6's tables: records 17-19) */
+extern unsigned char bank31;            /* (W68: AI help, SPELL.OVL's eleventh: loaded for a command) */
+/* (W68) AI help: ai_go (v/spload.c, overlay 16) loads overlay 31 and runs
+   ai_cmd (v/aiui.c) with t_arg the AI menu's item, or AI_BACK (Write
+   back after a request: ui.c's tick when ai_st is 2); ai_st 0 none, 1
+   asked, 2 back (cw_aside), 3 still open (no answer when it was back);
+   ai_act the action, ai_gen0 ai_gen when asked (main.c) */
+void ai_go(void), ai_cmd(void);
+#define AI_BACK 0x80
+extern unsigned char ai_st, ai_act;
+extern unsigned int ai_gen0;
+#define TOVL 20                         /* the test build's overlay (src/v/test.c: linked as 30) */
 extern unsigned char sw_tbank;
 extern unsigned char cw_idle;           /* the main loop found nothing to do */
 void __fastcall__ callb(unsigned char b, void (*f)(void));
@@ -235,7 +253,7 @@ void __fastcall__ sw_dclose(unsigned char h);
 
 /* menus.c (main RAM: the tables) */
 #define MI 12                           /* a list's items at most */
-#define NBAR 10                         /* the bar's: Veranda Write, File, Edit, Insert, Text, Style, Format, Font, Size, Tools */
+#define NBAR 12                         /* the bar's: Veranda Write, File, Edit, Insert, Text, Style, Format, Font, Size, Tools, Table, AI */
 struct mitem { const char *text; unsigned char type; void *p; };
 struct menu { unsigned char top, bottom; unsigned int left, right; unsigned char flags; struct mitem i[MI]; };
 extern struct menu mbar, msub;
@@ -257,7 +275,7 @@ void t_toolbar(void);                   /* (tbar.c, overlay 12) the toolbar and 
 void t_status(void);                    /* (status.c, overlay 8) the status bar (view_status) */
 void t_ruler(void);                     /* (ruler.c, overlay 9) the ruler: paragraph style t_arg */
 void t_sbar(void);                      /* (sbar.c, overlay 7) the scroll bar, when its thumb moved */
-void menus_layout(void);
+void menus_layout(void);                /* (tbcmd.c, overlay 29) */
 void menu_make(void);                   /* msub: bar item menu_bar's list */
 void sizes_fill(void);                  /* sz_list: the sizes of style menu_choice's font */
 unsigned int __fastcall__ strw(const char *s);  /* s's width in the font now (a menu item's) */
@@ -304,6 +322,41 @@ void sp_fkey(void), sp_tick(void);
 void so_open(void), so_close(void), so_key(void), so_press(void), so_save(void);
 void sp_bench(void);
 unsigned char sp_getin(void);           /* (v/spell.s) a key from the ROM's queue, 0 none */                    /* (test builds: the gate's measurements, t_arg $7D-$7F) */   /* (sppop.c) F7, F8 (t_arg the key); the idle pass's (t_arg 1: done something) */
+
+/* (1.6, W62-W67) tbview.c (overlay 27): a table's row drawn (draw_row's),
+   its cursor (cx, cy, ch: view_cursor's), a place's x on it, the place at
+   x and view_row's y (tb_hy), the selection's part of it; Up, Down, Home,
+   End in it (tb_nav: t_arg 1-4 and bit 7 Shift; 1 back: done) */
+void __fastcall__ tb_draw(unsigned char i);
+void __fastcall__ tb_cpos(unsigned char i);
+unsigned int __fastcall__ tb_lx(unsigned int i, pos_t p);
+pos_t __fastcall__ tb_lh(unsigned int i, unsigned int x);
+void tb_sel(unsigned char i, pos_t lo, pos_t hi);
+extern unsigned int tb_hy;
+void tb_nav(void);
+/* tbui.c (overlay 28): a key (t_arg: keyData; t_arg 1 back: taken);
+   tbcmd.c (overlay 29): the Table menu's list (itext, t_arg its items)
+   and items (t_arg), Insert > Table, a page break (refused in a table),
+   About, New from template, Save as template; the gate's 'L' $78 */
+void tb_key(void), tb_mtext(void), tb_cmd(void), tb_tinsert(void), tb_pbreak(void), tb_about(void);
+/* (tbui.c) tabedit.c's edits at the cursor for tbcmd.c: t_arg one of these
+   (the Table menu's items' numbers), tr_w its numbers; t_arg back its result */
+#define TD_INSERT 0
+#define TD_ROWUP  1
+#define TD_ROWDN  2
+#define TD_COLL   3
+#define TD_COLR   4
+#define TD_DELROW 5
+#define TD_DELCOL 6
+#define TD_TABLE  7
+#define TD_WIDTHS 8
+#define TD_GRID   10
+#define TD_ROW    11
+#define TD_USED   13                    /* (oexp.c's: the cells' widths used, bits at iobuf + 160) */
+#define TD_ROWAT  12                    /* (oexp.c's: the row at tb_p) */
+void tb_do(void);
+void tb_ntempl(void), tb_stempl(void), tb_tgate(void), tb_start(void);
+void f_discard(void), f_tload(void);    /* (files.c: tbui.c's) */
 
 /* clip.c (overlay 7) */
 void clip_copy(void), clip_cut(void), clip_paste(void);

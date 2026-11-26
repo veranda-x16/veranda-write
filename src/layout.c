@@ -51,6 +51,15 @@ pos_t an_pos;
 unsigned int ae_i;               /* the last edit's */
 pos_t ae_pos;
 
+/* word wrap's results (layfix.c, overlay 4: table.c, overlay 27, reads them) */
+unsigned int wr_len, wr_w;
+unsigned char wr_h, wr_a, wr_f, wr_s;
+unsigned char lc_first, lc_ps;
+/* (1.6) tables (table.c; tabedit.c's row: v/tbcmd.c, another overlay, reads it) */
+unsigned char tb_in, tb_s, tb_is, tb_ok;
+pos_t tb_p, tb_at;
+unsigned char tr_n, tr_f, tr_w[TB_MAXC];
+
 unsigned char dirty;             /* the edits since lay_fix */
 pos_t sa_pos;                    /* style_at's last answer (styles.c): its place, */
 unsigned char sa_s, sa_ok;       /* the style; 0: none (the text changed since) */
@@ -298,9 +307,15 @@ static void region(pos_t *lo, pos_t *hi, pos_t p, pos_t n1, pos_t n0)
     *hi = *hi - n0 + n1;
 }
 
+/* (W68) AI help's range, and the text's changes counted (an answer that
+   comes after the text changed is not put in: v/aiui.c) */
+pos_t ai_lo, ai_hi;
+unsigned int ai_gen;
+
 void lay_dirty(pos_t p, pos_t n1, pos_t n0)
 {
-    sa_ok = 0;
+    sa_ok = tb_ok = 0;
+    ++ai_gen;
     if (!dirty) {
         dirty = 1;
         d_lo = p;

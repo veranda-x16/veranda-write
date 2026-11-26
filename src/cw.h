@@ -160,7 +160,11 @@ unsigned char FASTCALL plat_sw_fail(unsigned char e);   /* the card failed (SE_)
 #define K_PS     0x11                   /*   (2) a paragraph style */
 #define K_PB     0x12                   /*   (1.2) a page break: a paragraph of its own */
 #define K_OBJ    0x13                   /*   (5) an object */
+#define K_TROW   0x14                   /*   (1.6) a table row starts: its first cell's first paragraph; arg TR_ */
+#define K_TCELL  0x15                   /*   (1.6) a table cell starts: arg its width, 256ths of the text's */
+#define K_TPARA  0x16                   /*   (1.6) a further paragraph of the cell before */
 #define K_LAST   0x17
+#define IS_TKIND(c) ((unsigned char)((c) - K_TROW) <= K_TPARA - K_TROW)
 #define IS_KIND(c) ((unsigned char)((c) - K_FIRST) <= K_LAST - K_FIRST)
 /* a byte that may be a character of the text */
 #define IS_CHAR(c) ((c) == CH_TAB || ((c) >= 0x20 && (c) < 0x7F) || (c) >= 0xA0)
@@ -379,6 +383,93 @@ extern unsigned int lg_x0, lg_ex, lg_rem, lg_nsp;
 extern void (*lay_busy)(void);
 
 /*---------------------------------------------------------------
+  table.c, tabedit.c: simple tables (CWRD 1.6, DECISIONS W62-W66)
+
+  A table is paragraphs: a cell one or more, a row its cells' in order.
+  A row's first paragraph starts with [K_TROW f K_TROW] [K_TCELL w
+  K_TCELL] (after its paragraph code, if any), each further cell's first
+  paragraph with [K_TCELL w K_TCELL], a cell's further paragraphs with
+  [K_TPARA 0 K_TPARA]. w: the cell's width in 256ths of the text's (a
+  row's sum to 256 at most; a table narrower than the text is left
+  aligned). A row is one line of the line table (its width TB_W), as
+  tall as its tallest cell: its cells' lines (sub-lines) inside it
+ ---------------------------------------------------------------*/
+#define TR_NOGRID  0x01                 /* K_TROW's arg: no borders (a table's rows alike) */
+#define TB_MAXC    8                    /* cells a row at most (a ninth: the eighth's paragraphs) */
+#define TB_W       1023                 /* a table row's line's width (another's is 1,022 at most) */
+#define TB_ROWMAX  2000                 /* a row's bytes (a line's are 2,047 at most): typing stops there */
+#define TB_PADL    4                    /* a cell's text from its left border */
+#define TB_PADX    7                    /*   its width less its cell's */
+#define TB_PADT    3                    /*   from the row's top (its border and 2) */
+#define TB_PADB    2                    /*   above its bottom (the last row: and its border) */
+#define TB_DEFW    32                   /* a cell's width when its code is missing */
+#define IS_TR(l)   ((l)->w == TB_W)
+extern unsigned char tb_in;             /* word wrap inside a cell (main RAM) */
+extern pos_t tb_p;                      /* tb_wrap: the paragraph at tb_p in style tb_s is */
+extern unsigned char tb_s, tb_is;       /*   a row's first (tb_is 1: wr_* the row's line) */
+extern unsigned char tb_ok;             /* the row tb_lay laid out last is the text's (lay_dirty clears it) */
+void tb_wrap(void);
+void tb_pstart(void), tb_pnext(void);  /* (tabpar.c: styles.c's par_start, par_next in a row: tb_p's) */
+/* (tbhead.h, in table.c and tabedit.c: tb_head(q), the paragraph at q's
+   table code: th_k 0 none, K_TROW, K_TCELL, K_TPARA; th_a its argument;
+   th_w a row's first cell's width; th_ro, th_co the K_TROW's, K_TCELL's
+   offsets from q, 0xFF none; th_po past its paragraph code) */
+/* (table.c) the row at p (style s) laid out: its cells (tc_n; tc_x[k]
+   cell k's left border from the text's left, tc_x[tc_n] the last one's
+   right), its flags tc_f, its height tc_h, tc_last: its table's last row,
+   tc_end: its end, tc_se: the style there; its cells' lines (sub-lines,
+   sl_: sl_n of them, the first TB_SL; offsets from p, y from its top) */
+#define TB_SL 48
+struct sub {
+    struct line l;                      /* the sub-line as a line (its paragraph's style, ...) */
+    unsigned int off;                   /* its place: an offset from the row's */
+    unsigned char y, c, num;            /* its top from the row's, its cell, its list number */
+    unsigned char pad[2];               /* (16 bytes: tsl[j] a shift) */
+};
+extern unsigned char tc_n, tc_f, tc_h, tc_last, tc_se, tc_s;
+extern unsigned int tc_x[TB_MAXC + 1];
+extern pos_t tc_p, tc_end;
+extern unsigned char sl_n;
+extern struct sub tsl[TB_SL];
+void FASTCALL tb_lay(pos_t p, unsigned char s);
+unsigned char FASTCALL tb_sub(unsigned int off);   /* the sub-line holding offset off (0xFF: none) */
+void tb_pdf(void);                      /* (pdf.c's: the row's numbers, its sub-lines, in tb_xb) */
+#define TB_CW(c) (tc_x[(c) + 1] - tc_x[c] > TB_PADX + 8 ? tc_x[(c) + 1] - tc_x[c] - TB_PADX : 8)
+/* (tabedit.c) the row holding p (from the line table: laid out): tr_lo
+   .. tr_hi, its flags tr_f, its cells (tr_n: tr_c[k] cell k's first
+   paragraph, tr_c[tr_n] = tr_hi; tr_w[k] its width); 0: not in a row */
+extern pos_t tr_lo, tr_hi, tr_c[TB_MAXC + 1];
+extern unsigned char tr_n, tr_f, tr_w[TB_MAXC];
+unsigned char FASTCALL tb_row(pos_t p);
+/* the table holding p: tt_lo .. tt_hi, its rows tt_n; 0: none */
+extern pos_t tt_lo, tt_hi;
+extern unsigned int tt_n;
+unsigned char FASTCALL tb_table(pos_t p);
+unsigned char FASTCALL tb_cell(pos_t p);   /* (after tb_row) the cell p is in */
+pos_t FASTCALL tb_cstart(unsigned char k);  /* (after tb_row) cell k's text's start */
+#define TB_CEND(k) (tr_c[(k) + 1] - 1)   /*   its last paragraph's CR */
+/* the edits (the caller makes them one undo step); 0 done, else DE_ (or
+   DE_TB: not here; tb_at: where the cursor goes) */
+#define DE_TB 9
+extern pos_t tb_at;
+unsigned char tb_insert(pos_t p, unsigned char rows, unsigned char cols);   /* before p's paragraph */
+unsigned char FASTCALL tb_addrow(pos_t p, unsigned char below);
+unsigned char FASTCALL tb_addcol(pos_t p, unsigned char right);
+unsigned char FASTCALL tb_delrow(pos_t p);
+unsigned char FASTCALL tb_delcol(pos_t p);
+unsigned char FASTCALL tb_deltable(pos_t p);
+unsigned char tb_widths(pos_t p, const unsigned char *w, unsigned char n);   /* every row's first n cells */
+unsigned char FASTCALL tb_grid(pos_t p, unsigned char on);
+unsigned char tb_return(pos_t p, unsigned char t);   /* Return in a cell: a further paragraph of it */
+/* a deletion of [lo, hi) leaves the tables whole: inside one cell, or
+   outside every row (whole tables), 1 */
+unsigned char tb_delok(pos_t lo, pos_t hi);
+unsigned char tb_bs(pos_t p);           /* Backspace at p: 1 as always, 0 nothing, 2 the cursor to tb_at */
+unsigned char tb_del(pos_t p);          /* Delete at p: 1 as always, 0 nothing */
+unsigned char tb_next(pos_t p, unsigned char fwd);   /* the cell after (before) p's: tb_at; 0 none */
+void FASTCALL tb_used(unsigned char *b);  /* the cells' widths the text has: a bit each in b[32] */
+
+/*---------------------------------------------------------------
   page.c: the page setup (CWRD 1.4, the PAGE chunk: docs/FORMAT.md);
   hf.c: the header's and footer's fields
  ---------------------------------------------------------------*/
@@ -478,7 +569,7 @@ extern unsigned char fl_bold, fl_a, fl_d;
  ---------------------------------------------------------------*/
 #define CW_MAGIC "CWRD"
 #define CW_MAJOR 1
-#define CW_MINOR 5                      /* (1.3: INFO's charset byte, W38; 1.4: PAGE, W44; 1.5: INFO's language, W57) */
+#define CW_MINOR 6                      /* (1.3: INFO's charset byte, W38; 1.4: PAGE, W44; 1.5: INFO's language, W57; 1.6: tables, W62) */
 #define CS_LATIN1  0                    /* INFO byte 6: the text's set: Latin-1 (1.0-1.2) */
 #define CS_L10     1                    /*   ISO-8859-16, the Veranda set (1.3: Veranda's V135) */
 typedef unsigned char (*cw_wfn)(const void *p, unsigned int n);   /* 0 written */
@@ -543,5 +634,28 @@ extern cw_rfn gw_rf;
 #endif
 #define IOBUF 512
 extern unsigned char iobuf[IOBUF];
+
+/*---------------------------------------------------------------
+  ai.c: AI help's text (DECISIONS W68; Veranda's docs/AIREQ.md): what
+  goes to Veranda Ask (AI.IN) and its answer (AI.OUT) put in
+ ---------------------------------------------------------------*/
+#define AI_MAX   8192                   /* AI.IN's bytes at most */
+#define AI_RUN   256                    /* (ai_add's runs: iobuf's first bytes; its input after them) */
+extern pos_t ai_lo, ai_hi;              /* (layout.c: main RAM) the range asked about; after ai_end the answer */
+extern unsigned int ai_gen;             /* (layout.c) the text's changes counted (lay_dirty, lay_all) */
+extern unsigned int ai_n;               /* (ai_check) AI.IN's bytes */
+#define AE_EMPTY 1                      /* ai_check: no characters (spaces only) */
+#define AE_CELLS 2                      /*   not inside one table cell, or a table in it */
+#define AE_LONG  3                      /*   over AI_MAX */
+void FASTCALL ai_para(pos_t p);         /* ai_lo, ai_hi: the paragraph at p (its characters, not its CR) */
+unsigned char ai_check(void);           /* [ai_lo, ai_hi) can be asked about: 0, else AE_ */
+void ai_text(void);                     /* AI.IN's bytes: plat_ai_put, iobuf at a time */
+void FASTCALL plat_ai_put(const unsigned char *b, unsigned int n);   /* (the platform's) */
+#define AM_REPLACE 0                    /* ai_begin: the answer in place of the range */
+#define AM_AFTER   1                    /*   as paragraphs after the range's paragraph */
+#define DE_AI    10                     /* ai_end: the answer had no characters (nothing done) */
+void FASTCALL ai_begin(unsigned char mode);
+void ai_add(const unsigned char *b, unsigned int n);   /* (b not in iobuf's first AI_RUN bytes) */
+unsigned char ai_end(void);             /* 0 done (else DE_: the caller undoes the step) */
 
 #endif

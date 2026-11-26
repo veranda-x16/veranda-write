@@ -305,7 +305,7 @@ static void pick_size(unsigned char i)
 void m_about(void)
 {
     GotoFirstMenu();
-    message("Veranda Write 0.4 (stage 4): a word processor.", "MIT licence, (c) 2026 Marcin Spoczynski");
+    callb(bank29, tb_about);            /* (v/tbcmd.c: this overlay's room) */
 }
 
 static void __fastcall__ set_named(unsigned char k)
@@ -326,7 +326,7 @@ static void m_find(void) { GotoFirstMenu(); t_arg = 0; CALL9(fp_open); }
    a page break, PDF */
 static void m_pagesetup(void) { GotoFirstMenu(); t_arg = 0; callb(bank16, pp_open); }
 static void m_headfoot(void) { GotoFirstMenu(); t_arg = 5; callb(bank16, pp_open); }
-static void m_pbreak(void) { GotoFirstMenu(); callb(bank14, t_pbreak); }
+static void m_pbreak(void) { GotoFirstMenu(); callb(bank29, tb_pbreak); }   /* (not in a table: tbcmd.c) */
 static void m_pdf(void) { GotoFirstMenu(); t_arg = 0; callb(bank16, t_pdf); }
 static void m_docx(void) { GotoFirstMenu(); t_arg = 1; callb(bank16, t_pdf); }   /* (W52) */
 static void m_odt(void) { GotoFirstMenu(); t_arg = 2; callb(bank16, t_pdf); }
@@ -335,14 +335,18 @@ static void m_findnext(void) { GotoFirstMenu(); CALL9(fp_next); }
 static void m_count(void) { GotoFirstMenu(); CALL9(t_count); }
 static void m_goto(void) { GotoFirstMenu(); CALL9(t_goto); }
 static void m_date(void) { GotoFirstMenu(); CALL9(t_date); }
+/* (1.6, W62-W67) Insert > Table, File > New from template, Save as template (v/tbcmd.c) */
+static void m_table(void) { GotoFirstMenu(); callb(bank29, tb_tinsert); }
+static void m_ntempl(void) { GotoFirstMenu(); callb(bank29, tb_ntempl); }
+static void m_stempl(void) { GotoFirstMenu(); callb(bank29, tb_stempl); }
 
 /* the menus: a list made when its bar item opens (tools.c), each item's
    routine this one, with the item */
-static void (*const acts[31])(void) = {
+static void (*const acts[34])(void) = {
     m_about, m_count,
-    c_new, c_open, c_save, c_saveas, m_pagesetup, m_pdf, m_docx, m_odt, c_close, c_quit,
+    c_new, m_ntempl, c_open, c_save, c_saveas, m_stempl, m_pagesetup, m_pdf, m_docx, m_odt, c_close, c_quit,
     m_undo, m_redo, m_cut, m_copy, m_paste, m_selall, m_find, m_findnext, m_replace, m_goto,
-    m_pbreak, m_date, m_headfoot,
+    m_pbreak, m_date, m_headfoot, m_table,
     m_plain, m_bold, m_italic, m_uline, m_larger, m_smaller,
 };
 
@@ -362,6 +366,8 @@ void __fastcall__ m_item(unsigned char i)
     case 7: pick_font(i); return;
     case 8: pick_size(i); return;
     case 9: t_arg = i; if (sp_on()) callb(bank26, t_tools); return;   /* (W57: Tools, v/sppop.c) */
+    case 10: t_arg = i; callb(bank29, tb_cmd); return;   /* (1.6: Table, v/tbcmd.c) */
+    case 11: t_arg = i; callb(bank16, ai_go); return;    /* (W68: AI help, v/aiui.c) */
     }
     acts[mfirst[menu_bar] + i]();
 }
@@ -434,6 +440,10 @@ static void key(void)
         if (t_arg)
             return;
     }
+    t_arg = k;
+    callb(bank28, tb_key);              /* (1.6: a table's keys, v/tbui.c) */
+    if (t_arg)
+        return;
     if (m & KEYM_ARROW) {
         switch (k) {
         case KEY_LEFT:
@@ -770,30 +780,19 @@ static void tick(void)
     play_slow(cur_on);                  /* (the blink probe: tools/play.s) */
     test_tick();
 #endif
+    if (ai_st == 2 && menuNumber == 0) {
+        cw_idle = 0;                    /* (W68: back after AI help was asked: its answer, when the */
+        t_arg = AI_BACK;                /*  window is drawn again; the gate's player back first) */
+        callb(bank16, ai_go);
+    }
 }
 
 void __fastcall__ ui_main(unsigned char opts)
 {
-    callb(bank19, ovl_clear);           /* (W60: the overlays' variables 0, as on a first start) */
-    dispBufferOn = ST_WR_FORE | ST_WR_BACK;
-    vr_home(opts);                      /* /DOCUMENTS first (Veranda's DECISIONS V71) */
-    if (curDirName[0] != '/')
-        strcpy((char *)curDirName, "/");
-    longNames = LONG_NAMES;
-    sw_init();                          /* the paged cbufs (the text, the line table) */
-    bk_keep = 2;                        /* (banks left to Veranda: accessories, the kernel) */
-    ul_init();
-    callb(bank14, pg_loaddef);          /* (the user's page setup for new documents, W44) */
-    doc_new();
-    ty_style = 0;
-    CALL8(menus_layout);
-    view_frame();
-#ifdef CW_TEST
-    test_start();
-#endif
-    sw_start();                         /* the swap's folder (a stale one removed) */
-    if ((opts & ST_LD_DATA) && dataFileName[0])
-        CALL2(f_startdoc);
+    callb(bank9, ovl_clear);            /* (W60: the overlays' variables 0, as on a first start) */
+    callb(bank7, sp_cfgload);          /* (W60: the spelling settings; W58: marks as you type; W68: the AI menu) */
+    t_arg = opts;
+    callb(bank29, tb_start);            /* (the rest of the start: v/tbcmd.c, for this one's room) */
     theme_menus();                      /* the menu bar (Veranda's DECISIONS V74, V79) */
     DoMenu(&mbar, 0);
     keyVector = VR_FN(key);
@@ -803,6 +802,5 @@ void __fastcall__ ui_main(unsigned char opts)
     need_view = 1;
     status_dirty = 1;
     follow = 1;
-    callb(bank22, sp_cfgload);          /* (W60: the spelling settings; W58: marks as you type) */
     LogText((void *)running);
 }

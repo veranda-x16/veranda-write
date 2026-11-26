@@ -89,12 +89,17 @@ void t_status(void)
         p = put_s(p, " selected");
     }
     *p = 0;
+    /* (sr: 40 bytes; a message too long for "   Modified" after it
+       alone: 1.6's "Select in one cell, or all the table" with it ran
+       into the menu bar's table after sr, and Veranda drew the bar there) */
     p = sr;
-    if (status_msg[0]) {
+    if (status_msg[0])
         p = put_s(p, status_msg);
-        p = put_s(p, "   ");
+    if (p - sr <= (int)sizeof sr - 12) {
+        if (p != sr)
+            p = put_s(p, "   ");
+        p = put_s(p, doc_modified ? "Modified" : "Saved");
     }
-    p = put_s(p, doc_modified ? "Modified" : "Saved");
     *p = 0;
     dispBufferOn = ST_WR_FORE | ST_WR_BACK;
     vr_win_status(&win, sl, sr);

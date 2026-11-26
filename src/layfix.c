@@ -7,13 +7,17 @@
 #endif
 #include "cw.h"
 #include "laypriv.h"
+#ifndef CW_HOST
+extern unsigned char bank27;            /* (table.c's overlay: v/cwv.h) */
+void __fastcall__ callb(unsigned char b, void (*f)(void));
+#endif
 
 /*---------------------------------------------------------------
   one line
  ---------------------------------------------------------------*/
-unsigned int wr_len, wr_w;
-unsigned char wr_h, wr_a, wr_f, wr_s;
-unsigned char lc_first, lc_ps;          /* the paragraph: see cw.h */
+/* (wr_len, wr_w, wr_h, wr_a, wr_f, wr_s, lc_first, lc_ps: layout.c's,
+   main RAM: a table's row, table.c, another overlay, wraps its cells
+   with this and reads them) */
 unsigned int wr_lim;                    /* the line's width (wrap_w less the indents) */
 
 /* the window of the text being wrapped, and wr_scan's state (the X16:
@@ -70,8 +74,8 @@ static void para_in(pos_t p)
     wr_lim = wrap_w - ps->left - ps->right;
     if (lc_first && !IS_LIST(ps->kind))
         wr_lim -= ps->first;
-    if ((int)wr_lim < 40)
-        wr_lim = 40;
+    if ((int)wr_lim < (tb_in ? 16 : 40))
+        wr_lim = tb_in ? 16 : 40;       /* (a narrow table's cell: 16) */
     (void)p;
 }
 
@@ -89,6 +93,18 @@ void wrap(pos_t p, unsigned char s)
         wr_at = p;
         wr_rn = (unsigned char)cb_read(&tx, p, wr_rb, sizeof wr_rb);
         wr_ri = 0;
+    }
+    if (lc_first && !tb_in && wr_ri < wr_rn && IS_KIND(wr_rb[wr_ri])) {
+        /* (1.6) a paragraph that starts with a code: a table's row? (table.c) */
+        tb_p = p;
+        tb_s = s;
+#ifdef CW_HOST
+        tb_wrap();
+#else
+        callb(bank27, tb_wrap);
+#endif
+        if (tb_is)
+            return;
     }
     para_in(p);
     wr_f = 0;
@@ -228,7 +244,7 @@ void wrap(pos_t p, unsigned char s)
     if (pbk == 1 && (wr_f & (LF_FIRST | LF_PARA)) == (LF_FIRST | LF_PARA))
         wr_f |= LF_PB;
     wr_len = i;
-    wr_w = vis;
+    wr_w = vis > TB_W - 1 ? TB_W - 1 : vis;   /* (TB_W: a table's row's) */
     wr_a = bx > 250 ? 250 : (unsigned char)bx;
     wr_h = w > 255 ? 255 : (unsigned char)w;
     wr_s = s;
@@ -295,6 +311,7 @@ unsigned char lay_all(void)
     pos_t p = 0;
     unsigned char s = 0, e = 0;
     cb_clear(&lt);
+    ++ai_gen;                           /* (W68: AI help's answer to an earlier text not used) */
     lt_n = 0;
     lw_n = 0;
     sa_ok = 0;

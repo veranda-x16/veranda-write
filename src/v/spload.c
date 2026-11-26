@@ -1,50 +1,65 @@
-/* Veranda Write on Veranda: spelling's overlays loaded when spelling is
-   first used, and given back before a document is opened or exported
-   (overlay 22, which has the room; W59).
+/* Veranda Write on Veranda: the overlays that are not records, loaded
+   when they are wanted: spelling's when spelling is first used, given
+   back before a document is opened or exported (W59); the office
+   files' when a .docx or an .odt is opened or exported, given back after
+   it (W66). Overlay 16, which has the room (1.6's tables wanted the
+   banks the office overlays had for good).
 
    Overlays 23-26 (the dictionary and the marks, the suggestions and the
-   files, the panel, the pop-up and the Tools menu: 32 KB) are not
-   records of `Veranda Write.cvt`, which Veranda would load into four
-   banks at the start for good: at 512 KB the gate's 600 KB .docx then
-   no longer opened (it had 2 banks to spare, measured). They are
-   `/VERANDA/DICT/SPELL.OVL`, beside the dictionaries (tools/spovl.py
-   makes it at the link): "WSPO", the build's mark (4 bytes, also put
-   into sp_want here, so a file of another build is refused), then each
-   overlay: its length (2 bytes) and its bytes. sp_load reads them into
-   four banks of the document's pool (bk_get: a chunk of a document
-   larger than RAM may go out to the card for them); sp_unload gives
-   them back, with the dictionary's banks (the hash, the word lists, the
-   cache: overlay 23's sp_drop), before Open (a .docx or an .odt is
-   converted in memory) and the exports, and the rows on the screen are
-   noted to be looked at again (their marks as drawn stay).
+   files, the panel, the pop-up and the Tools menu: 32 KB) and 17-22 (the
+   ZIP and XML readers, the import, .docx's, .odt's, the export and its
+   parts: 48 KB) are not records of `Veranda Write.cvt`, which Veranda
+   would load into banks at the start for good: at 512 KB the gate's
+   600 KB .docx then no longer opened (W59), and 1.6's three table
+   overlays left a document too few banks with spelling loaded (W66).
+   They are `/VERANDA/DICT/SPELL.OVL` (tools/spovl.py makes it at the
+   link): "WSPO", the build's mark (4 bytes, also put into sp_want here,
+   so a file of another build is refused), then each overlay, 23-26 then
+   17-22: its length (2 bytes) and its bytes. Their banks' variables are
+   glue.s's in that order. Spelling's are read into banks of the
+   document's pool (bk_get: a chunk of a document larger than RAM may go
+   out to the card for them); the office files' into a run of six of
+   Veranda's (BankAlloc), given back whole after (taken from the pool
+   one at a time they filled the runs kept for what is never put out, and
+   the gate's 600 KB .docx no longer opened at 512 KB), from the pool only
+   when Veranda has no such run. Each bank's variables after its bytes
+   cleared.
 
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #include <string.h>
 #include <vrpath.h>
 #include "cwv.h"
 #include "../spell.h"
-#pragma code-name ("OVERLAY22")
-#pragma rodata-name ("OVL22RO")
-#pragma bss-name ("OVL22BSS")
-#pragma data-name ("OVL22DATA")
+#pragma code-name ("OVERLAY16")
+#pragma rodata-name ("OVL16RO")
+#pragma bss-name ("OVL16BSS")
+#pragma data-name ("OVL16DATA")
 
 unsigned char sp_want[4] = { 0, 0, 0, 0 };   /* (tools/spovl.py writes the build's mark here) */
 
 unsigned int __fastcall__ sw_xfer(unsigned char h, unsigned char b, unsigned int n, unsigned char w);
-extern void *sw_xa;
 #define PATH ((char *)iobuf + IOBUF - 64)
+#define OB (&bank23)                    /* (glue.s's: 23-26, then 17-22) */
 
-/* (t_arg 1: loaded) */
-void sp_load(void)
+/* m: SPELL.OVL's overlays, bit k its k-th (23-26, 17-22) */
+static void FASTCALL give(unsigned int m)
 {
-    static unsigned char h, k, b[4], ok;
-    static unsigned int n, a, c, len[4];
+    static unsigned char k;
+    for (k = 0; m; ++k, m >>= 1)
+        if (m & 1) {
+            bk_put(OB[k]);
+            OB[k] = 0;
+        }
+}
+
+/* SPELL.OVL's overlays m (bit k its k-th) into banks (their variables',
+   else bk_get's); 1 done (else the caller gives them back) */
+static unsigned char FASTCALL get(unsigned int m)
+{
+    static unsigned char h, k, ok;
+    static unsigned int a, c, len;
+    static unsigned long at;
     static const char *d;
-    t_arg = 0;
-    if (bank23) {
-        t_arg = 1;
-        return;
-    }
     d = vr_cd(VR_SYS);
     strcpy(PATH, "/");
     if (d[1])
@@ -52,43 +67,46 @@ void sp_load(void)
     strcat(PATH, "/DICT/:SPELL.OVL");
     vr_cdback();
     h = FOpen(PATH, 'r');
-    if (h < 2) {
-        sp_nofile = 1;
-        return;
-    }
+    if (h < 2)
+        return 0;
     ok = FRead(h, iobuf, 8) == 8 && !memcmp(iobuf, "WSPO", 4) && !memcmp(iobuf + 4, sp_want, 4);
-    for (k = 0; k < 4; ++k)
-        b[k] = 0;
-    for (k = 0; k < 4 && ok; ++k) {
+    at = 8;
+    for (k = 0; m && ok; ++k, m >>= 1) {
         ok = FRead(h, iobuf, 2) == 2;
-        n = iobuf[0] | (unsigned int)iobuf[1] << 8;
-        if (!ok || n > 8191 || !(b[k] = bk_get()))
+        len = iobuf[0] | (unsigned int)iobuf[1] << 8;
+        at += 2;
+        if (!ok || len > 8191)
             ok = 0;
-        else
-            ok = sw_xfer(h, b[k], n, 0) == n;
-        len[k] = n;
+        else if (!(m & 1))
+            ok = !FSeek(h, (unsigned int)(at += len), (unsigned int)(at >> 16));
+        else if (!(OB[k] || (OB[k] = bk_get())) || sw_xfer(h, OB[k], len, 0) != len)
+            ok = 0;
+        else {
+            at += len;
+            /* (W60) the variables after the bytes cleared: the bank comes
+               from the pool with what it last held */
+            memset(iobuf, 0, IOBUF);
+            for (a = len; a < 8192; a += c) {
+                c = 8192 - a > IOBUF ? IOBUF : 8192 - a;
+                bk_wr(OB[k], 0xA000u + a, iobuf, c);
+            }
+        }
     }
     FClose(h);
-    if (!ok) {
-        for (k = 0; k < 4; ++k)
-            bk_put(b[k]);
-        sp_nofile = 1;
-        return;
-    }
-    /* (W60) each overlay's variables after its bytes cleared: the banks
-       come from the pool with what they last held (a program started
-       again in the same session finds its earlier self's values there) */
-    memset(iobuf, 0, IOBUF);
-    for (k = 0; k < 4; ++k)
-        for (a = len[k]; a < 8192; a += c) {
-            c = 8192 - a > IOBUF ? IOBUF : 8192 - a;
-            bk_wr(b[k], 0xA000u + a, iobuf, c);
-        }
-    bank23 = b[0];
-    bank24 = b[1];
-    bank25 = b[2];
-    bank26 = b[3];
+    return ok;
+}
+
+/* (t_arg 1: loaded) */
+void sp_load(void)
+{
     t_arg = 1;
+    if (bank23)
+        return;
+    t_arg = get(0x0F);
+    if (!t_arg) {
+        give(0x0F);
+        sp_nofile = 1;
+    }
 }
 
 void sp_unload(void)
@@ -98,60 +116,75 @@ void sp_unload(void)
     if (!bank23 || spp_on)
         return;
     sp_drop(1);
-    bk_put(bank23);
-    bk_put(bank24);
-    bk_put(bank25);
-    bk_put(bank26);
-    bank23 = bank24 = bank25 = bank26 = 0;
+    give(0x0F);
     for (k = 0; k < vn; ++k)
         vr[k].mk |= 0x80;               /* (looked at again when it is back) */
     sp_pend = 1;
 }
 
-/*---------------------------------------------------------------
-  (W60) the settings: /VERANDA/.SYSTEM/WRITE.CFG (src/spcfg.c says
-  its bytes). Read at the start (ui_main): a file that is not there or
-  not one gives the defaults; written when the Tools menu changes them
- ---------------------------------------------------------------*/
-static const char cfgname[] = "WRITE.CFG";
+/* (W66) the office overlays for an import (t_arg 0: 17-20, the ZIP and
+   XML readers, the import, .docx's, .odt's) or an export (1: 18, 21,
+   22, its progress, the export, its parts): fewer banks taken than all
+   six (t_arg back 1: loaded; else said) */
+static unsigned char run;              /* (the run's first bank, 0: from the pool) */
+static unsigned int om;                 /* (the ones loaded) */
 
-static void live(void)
+void ox_up(void)
 {
-    sp_live = !(sp_cfg & (SPC_NOMARK | SPC_ASK));
-}
-
-void sp_cfgload(void)
-{
-    static unsigned char h;
-    static unsigned int n;
-    n = 0;
-    vr_cd(VR_DATA);
-    strcpy(PATH, cfgname);              /* (main RAM: the kernel reads it) */
-    h = FOpen(PATH, 'r');
-    if (h >= 2) {
-        n = FRead(h, iobuf, 16);
-        FClose(h);
+    static unsigned char k, n, b;
+    if (om) {
+        t_arg = 1;
+        return;
     }
-    vr_cdback();
-    sp_cfg = sp_cfgparse(iobuf, n > 16 ? 0 : n);
-    live();
+    om = t_arg ? 0x320 : 0x0F0;
+    n = t_arg ? 3 : 4;
+    if ((b = run = BankAlloc(n)) != 0)
+        for (k = 4; k < 10; ++k)
+            if (om >> k & 1)
+                OB[k] = b++;
+    t_arg = 1;
+    if (get(om))
+        return;
+    ox_down();
+    t_arg = 0;
+    message("Cannot read", "DICT/SPELL.OVL");
 }
 
-void sp_cfgsave(void)
+void ox_down(void)
 {
-    static unsigned char h, e;
-    live();
-    e = 1;
-    vr_cd(VR_DATA);
-    strcpy(PATH, cfgname);
-    h = FOpen(PATH, 'w');
-    if (h >= 2) {
-        sp_cfgmake(iobuf, sp_cfg);
-        e = FWrite(h, iobuf, SPC_LEN);
-        e |= FClose(h);
+    if (!run)
+        give(om);
+    else {
+        BankFree(run);
+        run = 0;
+        memset(OB + 4, 0, 6);
     }
-    vr_cdback();
-    t_arg = e;
+    om = 0;
 }
 
+/* ((W60) the settings' file, sp_cfgload and sp_cfgsave: v/spcfgio.c,
+   overlay 7, since 1.6's tables wanted overlay 22's room) */
 
+/* (W68) AI help (overlay 31, SPELL.OVL's eleventh: v/aiui.c) for a
+   command (t_arg: the AI menu's item, AI_BACK), in a bank of Veranda's
+   (else the pool's) for it alone, given back after: a record would hold
+   a bank of the document's for good, for something used now and then */
+void ai_go(void)
+{
+    static unsigned char k, own;
+    k = t_arg;
+    own = (OB[10] = BankAlloc(1)) != 0;
+    if (get(0x400)) {
+        t_arg = k;
+        callb(OB[10], ai_cmd);
+    } else {
+        if (k == AI_BACK)
+            ai_st = 3;                  /* (looked at again: AI > Check for the answer) */
+        message("Cannot read", "DICT/SPELL.OVL");
+    }
+    if (own)
+        BankFree(OB[10]);
+    else if (OB[10])
+        bk_put(OB[10]);
+    OB[10] = 0;
+}

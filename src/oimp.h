@@ -53,6 +53,19 @@ extern unsigned char pr_t;              /* whose properties pr_set sets: */
 #define PT_STY  4                       /*   the style st_new defined */
 extern unsigned char em_ps, em_rs;      /* the paragraph's, the run's style (0xFF: none) */
 extern unsigned char def_ps;            /* the paragraphs' default style (0xFF: none) */
+/* (1.6) a table's events, as the readers meet them (em_tbl: oemit.c
+   keeps the grid, the cells, the codes): */
+#define TB_START 0                      /* a table (not in a cell) */
+#define TB_COL   1                      /*   a grid column, v twips wide */
+#define TB_BORD  2                      /*   its borders: v TR_NOGRID or 0 */
+#define TB_ROW   3                      /*   a row */
+#define TB_CELL  4                      /*   a cell */
+#define TB_SPAN  5                      /*   over v grid columns */
+#define TB_PARA  6                      /*   a paragraph in it begun (em_par first) */
+#define TB_NEST  7                      /*   a paragraph of a table in a cell (the cell's) */
+#define TB_ENDC  8                      /*   the cell's end */
+#define TB_END   9                      /* the table's end */
+void em_tbl(unsigned char op, unsigned int v);
 
 #define OS_N 255                        /* the styles a file may define (a bank of 16 bytes each) */
 

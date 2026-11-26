@@ -839,7 +839,7 @@ static void test_file(void)
     saved = cur_m;
     flen = 0;
     CHECK(fmt_save(wr, decpos[ndec / 2]) == 0, "save");
-    CHECK(!memcmp(file, "CWRD\1\5", 6), "the header (1.5)");
+    CHECK(!memcmp(file, "CWRD\1\6", 6), "the header (1.6)");
     CHECK(!memcmp(file + 8, "INFO", 4) && file[22] == CS_L10, "INFO: the set ISO-8859-16 (1.3)");
     CHECK(file[23] == fmt_lang, "INFO: the language (1.5)");
     doc_new();
@@ -978,7 +978,7 @@ static void test_file(void)
                 break;
             }
         flen = 0;
-        CHECK(fmt_save(wr, 0) == 0 && file[5] == 5 && file[22] == CS_L10, "Polish: saved as 1.5, ISO-8859-16");
+        CHECK(fmt_save(wr, 0) == 0 && file[5] == CW_MINOR && file[22] == CS_L10, "Polish: saved as 1.6, ISO-8859-16");
         /* (1.5, W57) the language kept: saved, read back; a 1.4 file's: not said */
         fmt_lang = LANG_PL;
         flen = 0;
@@ -2375,6 +2375,8 @@ static void test_pdf_big(void)
 
 #include "test_office.c"
 #include "test_spell.c"
+#include "test_table.c"
+#include "test_ai.c"
 
 int main(int argc, char **argv)
 {
@@ -2440,6 +2442,10 @@ int main(int argc, char **argv)
         test_office();
     if (!fails)
         test_spell();
+    if (!fails)
+        test_table();
+    if (!fails)
+        test_ai();
     printf("%d checks, %d failures\n", checks, fails);
     return fails != 0;
 }

@@ -3,6 +3,7 @@
    Copyright (c) 2026 Marcin Spoczynski. MIT licence (see LICENSE). */
 #define lay_fix        e_lay_fix
 #define lay_all        e_lay_all
+#define wrap           e_wrap          /* (table.c's cells: overlay 27, through glue.s) */
 #define find_set       e_find_set
 #define find_from      e_find_from
 #define find_here      e_find_here

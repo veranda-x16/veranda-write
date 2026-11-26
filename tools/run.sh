@@ -40,11 +40,25 @@ if [ -n "$UPDSTUB" ]; then                  # (W61: Tools > Get dictionaries loo
 	mkdir -p "$D/VERANDA/APPS"
 	printf 'not Veranda Update' > "$D/VERANDA/APPS/Veranda Update.cvt"
 fi
+if [ -n "$ASKFAKE" ]; then                  # (W68: AI help's stand-in for Veranda Ask, tools/askfake)
+	mkdir -p "$D/VERANDA/APPS"
+	cp "build/desk/Veranda Ask.cvt" "$D/VERANDA/APPS/"
+fi
+# (W67) Veranda's templates, as the package puts them (make veranda's)
+if [ -d build/veranda/TEMPLATES ]; then
+	cp -r build/veranda/TEMPLATES "$D/VERANDA/"
+fi
+if [ -n "$TPLCFG" ]; then                   # (W67: the documents' language the keyboard's: 'L' $7A switches it)
+	mkdir -p "$D/VERANDA/.SYSTEM"
+	printf 'WCFG\001\000\003' > "$D/VERANDA/.SYSTEM/WRITE.CFG"
+fi
 # (W59) spelling's overlays: the program's own (its build folder's), always
 mkdir -p "$D/VERANDA/DICT"
 cp "$(dirname "${APP:-build/veranda/test/Veranda Write.cvt}")/SPELL.OVL" "$D/VERANDA/DICT/"
 python3 -I -B tools/script.py "$D" ${STOP:+--stop $STOP}
 [ "$4" = --prepare ] && exit 0
+# (W67: the templates' {date} the host's day: the clock set from it)
+RTC=; [ "$SESSION" = templ ] && RTC=-rtc
 (cd "$D" && SDL_VIDEODRIVER=dummy timeout -s INT ${TIMEOUT:-400} "$EMU" -rom "$ROM" -prg VERANDA.PRG -run \
-	-warp -sound none -echo -dump V ${RAM:+-ram $RAM} > console.txt 2>&1) || true
+	-warp -sound none -echo -dump V ${RAM:+-ram $RAM} $RTC > console.txt 2>&1) || true
 [ -f "$D/dump.bin" ] || { tail -c 400 "$D/console.txt"; echo "run.sh: the session did not finish ($D)"; exit 1; }

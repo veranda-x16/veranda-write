@@ -120,14 +120,17 @@ def main():
         diff.append(('' if b == last + 1 else '%d ' % b) + '/' + g)
         last = b
     s = ' '.join(diff)
-    print('/* the 40 bytes where ISO-8859-16 is not WinAnsiEncoding */')
-    print('static const char pdf_diff[] =')
+    print('#include "pdfenc.h"')
+    print('#endif')
+    # (1.6) the encoding's text: src/pdfenc.h, a macro (the X16 keeps it in overlay 28)
+    out = ['/* (1.6: a macro: the X16 keeps it in overlay 28, v/tbui.c\'s pdf_enc,', '   for overlay 15\'s room) */',
+           '#define PDF_DIFF \\']
     while s:
         k = s.rfind(' ', 0, 70) if len(s) > 70 else len(s)
-        print('    "%s%s"' % (s[:k], ' ' if k < len(s) else ''))
+        out.append('    "%s%s"%s' % (s[:k], ' ' if k < len(s) else '', ' \\' if k < len(s) else ''))
         s = s[k + 1:]
-    print('    ;')
-    print('#endif')
+    print('/* (src/pdfenc.h) */', file=sys.stderr)
+    print('\n'.join(out), file=sys.stderr)
 
 
 main()
