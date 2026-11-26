@@ -3196,6 +3196,54 @@ def session_ai(run):
     s.W(30)
     s.console.append('CW AI LONG')
     st(name='Long.cwr')
+    # (W72) Ask about a long selection (over 1,000 characters, several
+    # paragraphs, as the user's on an X16: a list from the old manual page):
+    # AI.REQ's question exactly as typed, not the text's tail (the question
+    # was in iobuf, which AI.IN is written through 512 bytes at a time:
+    # "Question: s of text a page)."); then a Polish question, the longest
+    # the box takes (60 characters)
+    man = ['Veranda Write 0.4: what it does and what it does not do yet.',
+           'Document size: about 190 KB of text on a 512 KB X16; more on a 2 MB one. Larger documents are kept'
+           ' on the card a part at a time.',
+           'Fonts: the sans, the serif and the mono, in 9, 10, 12, 14, 18 and 24 points; bold, italic and'
+           ' underline; Polish letters in each.',
+           'Paragraphs: Body, Heading 1 to 3, the bulleted and the numbered list, the quote and the code block.',
+           'Files: its own .cwr, plain text, and geoWrite documents read; Word and OpenDocument not yet.',
+           'Editing: undo and redo of each step, cut, copy and paste between programs, find and replace,'
+           ' the word count, and the spelling check in English and in Polish as you type.',
+           'Tables: rows and columns of text, a cell\'s paragraphs, Tab to the next cell; no sums in them'
+           ' (Veranda Calc does those), no merged cells, no borders of their own.',
+           'Saving: Ctrl+S, the name kept long, a copy kept in OLD when one is replaced; the card is'
+           ' written only when you save.',
+           'Not yet: real pages, margins, headers and footers, page numbers, page breaks, printing, PDF.'
+           ' The page count in the status bar is nominal (9.7 KB of text a page).']
+    d = [(ord(c), SANS, 12, 0) for c in '\r'.join(man)]
+    cwrd.write(os.path.join(run, 'Manual.cwr'), d, minor=6)
+    s.K(ord('o'), CTRL)
+    s.W(40)
+    s.K(ord('M'))
+    s.W(10)
+    s.K(RET)
+    s.W(120)
+    m = TModel(list(d))
+    s.K(ord('a'), CTRL)
+    m.anc, m.cur = 0, len(m.c)
+    assert len(m.c) >= 1000
+    q = 'Which of these features matter most for a first release?'
+    ans = 'Pages and printing matter most.'
+    ask(AI_ASK, 'ok ' + ans, text_of(m.anc, m.cur), question=q)
+    s.console.append('CW AI QUESTION ' + q)
+    ai_apply(m, ans, True)
+    st(name='Manual.cwr')
+    s.K(ord('a'), CTRL)
+    m.anc, m.cur = 0, len(m.c)
+    q = 'Czy ta lista jest jasna? Co dopisać o żółtych ikonach doku?!'
+    assert len(q) == 60 and len(text_of(m.anc, m.cur)) >= 1000
+    ans = 'Tak, jest zrozumiała; dopisz, gdzie są ikony.'
+    ask(AI_ASK, 'ok ' + ans, text_of(m.anc, m.cur), question=q)
+    s.console.append('CW AI QUESTION ' + enc(q).decode('latin-1').encode().decode('latin-1'))   # (the emulator echoes $80-$FF as UTF-8)
+    ai_apply(m, ans, True)
+    st(name='Manual.cwr')
     # (W69) the box over a long bulleted list, scrolled, an item selected:
     # Veranda Ask not signed in (as the user saw it on an X16: the box's
     # text over the page's when its Y fields were bytes); its rectangle as
@@ -3206,6 +3254,8 @@ def session_ai(run):
     pp = [NAMED[5]] * len(items)
     cwrd.write(os.path.join(run, 'Guide.cwr'), d, paras=pp, minor=6)
     s.K(ord('o'), CTRL)
+    s.W(40)
+    s.click(*NO_BUTTON)                         # (W72: Manual.cwr's answers not saved)
     s.W(40)
     s.K(ord('G'))
     s.W(10)

@@ -43,8 +43,10 @@
 #define DLG  ((unsigned char *)iobuf)
 #define LN1  ((char *)iobuf + 64)
 #define LN2  ((char *)iobuf + 160)
-#define QB   ((char *)iobuf + 256)
+#define QB   ((char *)iobuf + 256)       /* (the box's field only: copied to aq as the box closes) */
+#define QK   (iobuf + 320)              /* (W72) the field's key stub (qstub: code, main RAM) */
 #define PATH ((char *)iobuf + IOBUF - 64)
+#define QMAX 60                         /* the question's characters (the box's field; aq) */
 #define PIECE 192                       /* AI.OUT read a piece at a time, into iobuf + AI_RUN */
 
 static const char *const act[] = { "rewrite", "shorten", "grammar", "translate-en", "translate-pl", "summarise", "ask" };
@@ -92,21 +94,110 @@ static const unsigned char qbox[] = {
     BX_T, 0, (BX_T + 95) & 255, (BX_T + 95) >> 8, BX_L, 0, (BX_L + 447) & 255, (BX_L + 447) >> 8,
     DBVARSTR, TXT_LN_X, TXT_LN_1_Y, 0x0C,
     DBVARSTR, TXT_LN_X, TXT_LN_2_Y, 0x0E,
-    DBGETSTRING, TXT_LN_X, TXT_LN_3_Y + 4, 0x10, 60,
+    DBGETSTRING, TXT_LN_X, TXT_LN_3_Y + 4, 0x10, QMAX,
+    DB_USR_ROUT, 0, 0,                  /* (W72: QK + 24, set by dlg: Polish letters in the field) */
     OK, DBI_X_0, DBI_Y_2,
     CANCEL, 49, DBI_Y_2,
     0
 };
 
+/* (W72) the question, in a buffer of its own from the box's closing to
+   AI.REQ's writing: in QB (iobuf) it was the text's tail by then, AI.IN
+   written a 512-byte piece at a time through iobuf (ai_text), the page's
+   redraw after the box reading fonts through it too (v/fcache.c); as seen
+   on an X16, "Question: s of text a page)." for a long selection */
+static char aq[QMAX + 1];
+
+/* (W72) the field's Polish letters. The kernel's GetString takes $20-$7F
+   only (its key routine, StrKey, ignores a key with bit 7 set), so ą, ł,
+   ż ... typed in the question's box were dropped. The box's DB_USR_ROUT
+   (after DBGETSTRING: keyVector is StrKey then) puts a stub in front of
+   StrKey; the stub is code in iobuf (main RAM: the kernel calls keyVector
+   with the program's own bank mapped, not this overlay's; main RAM has no
+   room for vr_tramp). A key below $A0 goes on to StrKey (a jump: Return
+   ends the box from there, nothing of ours on the stack); $A0-$FF to
+   qhigh, with this overlay's bank mapped */
+static const unsigned char qstub[] = {
+    0xAD, 0x49, 0x05,                   /*  0 lda keyData */
+    0xC9, 0xA0,                         /*  3 cmp #$A0 */
+    0xB0, 0x03,                         /*  5 bcs 10 */
+    0x4C, 0, 0,                         /*  7 jmp StrKey (8: set by 24) */
+    0xA5, 0x00,                         /* 10 lda $00 */
+    0x48,                               /* 12 pha */
+    0xA9, 0,                            /* 13 lda #bank (14) */
+    0x85, 0x00,                         /* 15 sta $00 */
+    0x20, 0, 0,                         /* 17 jsr qhigh (18) */
+    0x68,                               /* 20 pla */
+    0x85, 0x00,                         /* 21 sta $00 */
+    0x60,                               /* 23 rts */
+    0xAD, 0x2B, 0x05,                   /* 24 lda keyVector: the DB_USR_ROUT */
+    0x8D, 0, 0,                         /* 27 sta 8 */
+    0xAD, 0x2C, 0x05,                   /* 30 lda keyVector+1 */
+    0x8D, 0, 0,                         /* 33 sta 9 */
+    0xA9, 0,                            /* 36 lda #<stub */
+    0x8D, 0x2B, 0x05,                   /* 38 sta keyVector */
+    0xA9, 0,                            /* 41 lda #>stub */
+    0x8D, 0x2C, 0x05,                   /* 43 sta keyVector+1 */
+    0x60                                /* 46 rts */
+};
+
+/* a key of $A0-$FF in the field: StrKey given a space for it (its length,
+   the 0 after the text, the fault at the margin, a beep when full), then
+   the space made the letter (QB, its glyph, stringX: Backspace takes the
+   letter's own width) */
+static void qhigh(void)
+{
+    static unsigned char c, n, d;
+    static unsigned int x0;
+    c = keyData;
+    n = strlen(QB);
+    x0 = stringX;
+    keyData = ' ';                      /* ($A0, Shift+Space: a space) */
+    ((void (*)(void))(QK[8] | QK[9] << 8))();
+    if (c != 0xA0 && strlen(QB) == n + 1) {
+        /* (the kernel's entries called directly, veranda.inc's PromptOff,
+           WPutChar, PromptOn: their C wrappers would take 32 bytes of main
+           RAM, the test build's had 49) */
+        asm("jsr $899E");               /* PromptOff */
+        QB[n] = c;
+        d = dispBufferOn;
+        dispBufferOn = ST_WR_FORE;      /* (as GetString's: the foreground only) */
+        r11 = x0;
+        r12 = stringYW + baselineOffset;
+        asm("lda %v", c);
+        asm("jsr $8A27");               /* WPutChar: a, at (r11, r12); r11 past it */
+        dispBufferOn = d;
+        stringX = r11;
+        asm("jsr $899B");               /* PromptOn */
+    }
+    keyData = c;
+}
+
 static unsigned char FASTCALL dlg(const unsigned char *t, unsigned char n)
 {
     static unsigned char r;
     memcpy(DLG, t, n);
+    if (t == qbox) {
+        memcpy(QK, qstub, sizeof qstub);
+        QK[14] = *(unsigned char *)0;   /* (this overlay's bank) */
+        QK[18] = (unsigned char)VR_FN(qhigh);
+        QK[19] = VR_FN(qhigh) >> 8;
+        QK[28] = (unsigned char)((unsigned int)QK + 8);
+        QK[29] = (unsigned int)(QK + 8) >> 8;
+        QK[34] = (unsigned char)((unsigned int)QK + 9);
+        QK[35] = (unsigned int)(QK + 9) >> 8;
+        QK[37] = (unsigned char)(unsigned int)QK;
+        QK[42] = (unsigned int)QK >> 8;
+        DLG[23] = (unsigned char)((unsigned int)QK + 24);
+        DLG[24] = (unsigned int)(QK + 24) >> 8;
+    }
     r5 = (unsigned int)LN1;
     r6 = (unsigned int)LN2;
     r7 = (unsigned int)QB;
+    QB[QMAX] = 0;
     view_cursor(0);
     r = DoDlgBox(DLG);
+    strcpy(aq, QB);                     /* (QB[QMAX] 0; before the redraw below: it may use iobuf) */
     view_all();                         /* (a box this wide is not on the save-under stack: the
                                            kernel recovers it from the back screen, which left its
                                            text on the page; the text drawn again whole) */
@@ -236,12 +327,12 @@ static void FASTCALL request(unsigned char k)
         strcpy(LN1, "Ask Veranda Ask about the text:");
         strcpy(LN2, "(it goes when you click Send in Veranda Ask)");
         QB[0] = 0;
-        if (dlg(qbox, sizeof qbox) == CANCEL || !QB[0]) {
+        if (dlg(qbox, sizeof qbox) == CANCEL || !aq[0]) {
             log("NO QUESTION");
             return;
         }
         strcpy(tl, "QUESTION ");
-        strcat(tl, QB);
+        strcat(tl, aq);
         log(tl);
     }
     /* the files: AI.OUT and AI.RES of an earlier request first */
@@ -259,7 +350,7 @@ static void FASTCALL request(unsigned char k)
         strcat((char *)iobuf, act[k]);
         if (k == A_ASK) {
             strcat((char *)iobuf, "\r\nquestion ");
-            strcat((char *)iobuf, QB);
+            strcat((char *)iobuf, aq);  /* (W72: aq, not QB: iobuf held AI.IN's last piece) */
         }
         strcat((char *)iobuf, "\r\nback Veranda Write\r\n");
         e = put("AI.REQ", strlen((char *)iobuf));
